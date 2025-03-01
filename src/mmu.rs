@@ -611,7 +611,7 @@ impl Mmu {
             return Ok(va);
         }
 
-        // Sv39 (Sv48 in future)
+        // Sv39, Sv48, Sv57
         let levels = 3 + satp_mode - SatpMode::Sv39 as usize;
         let access_shift = match access {
             MemoryAccessType::Read => 0,

@@ -1,20 +1,17 @@
 # Simmerv
 
-Simmerv is a [RISC-V](https://riscv.org/) SoC emulator and written in
-Rust and compilable to WebAssembly.
-
-This is a substantially rewrite of [Takahiro's riscv-rust original
-emulator](https://github.com/takahirox/riscv-rust) (only 2% remains).
-This fork is already far more complete and is working towards near
-100% correctness.  Ultimately, we also expect it to become
-substantially faster, but this work is delayed until this is
-sufficiently correct to run benchmarks and off-the-shelf Linux
-distributions.
+Simmerv is a [RISC-V](https://riscv.org/) SoC emulator written in Rust
+and compilable to WebAssembly.  It started as a fork of [Takahiro's
+riscv-rust emulator](https://github.com/takahirox/riscv-rust), but by
+now 98% of the code has been rewritten, making it far more complete
+and faster.  Ultimately, we expect it to become substantially faster,
+but this work is delayed until we are able to run standard benchmarks
+and off-the-shelf Linux distributions.
 
 ## Online Demo
 
-You can run Linux on the emulator [in your
-browser](https://tommythorn.github.io/simmerv/wasm/web/index.html).
+You can run Linux on the emulator in your browser: [online demo is
+here](https://tommythorn.github.io/simmerv/wasm/web/index.html)
 
 ## Screenshots
 
@@ -23,7 +20,7 @@ browser](https://tommythorn.github.io/simmerv/wasm/web/index.html).
 
 ## Features
 
-- Emulate RISC-V RV64GC_Zba_Zicond processor and peripheral devices
+- Emulates RISC-V RV64GC_Zba_Zicond processor and peripheral devices
   (PLIC, CLINT, virtio block device and a UART)
 - Targets native and WASM
 
@@ -33,26 +30,26 @@ browser](https://tommythorn.github.io/simmerv/wasm/web/index.html).
 - [x] RV64FD (*PARTIALLY* flags/rounding modes very lacking)
 - [x] RV64Zifencei
 - [x] RV64Zicsr
-- [ ] RV64B (Zicond and Zba done)
 - [ ] Svnapot
-- [x] CSR (mostly done)
-- [x] Sv39
-- [x] Sv48 (untested, but should work)
+- [x] Zba (part of "B", RVA22)
+- [ ] Zbb (part of "B", RVA22)
+- [ ] Zbs (part of "B", RVA22)
+- [x] Zicond
+- [x] CSR (nearly complete)
+- [x] Sv39, Sv48, Sv57
 - [x] Privileged instructions
-- [ ] PMP (this is intensionally not implemented as it will negatively
-      affect performance)
+- [-] PMP (this is intensionally not implemented as it will negatively affect performance)
 
-The emulator supports all instructions listed above but some 
+The emulator supports all instructions listed above but some (like
+many FP instructions) are not 100% to the spec.
 
 - Boots Buildroot and Debian Trixie
 - Linux OpenSBI and legacy BBL boot support
 
 ### Current Issues Being Worked
 
-- gdb, rustc, and Geekbench segfaults
-- Ubuntu boot crashes and hangs
-- Debian boot sees non-fatal segfaults
-- U-boot loads but hangs before hand-off
+- Newer Linux kernel have issues (which is a problem for newer binaries)
+- U-boot loads but hangs before hand-off; might be an issue with ELF loading
 
 ### High Priority Work Post Issues
 
@@ -63,7 +60,7 @@ The emulator supports all instructions listed above but some
 
 - Disk support without an in-memory copy (can WASM support this?)
 
-- Fix the disassembler to recognize pseudo ops like li, mv, ret,
+- Improve the disassembler to recognize pseudo ops like li, mv, ret,
   etc. (This requires a structural change).
 
 ## How to run Linux
