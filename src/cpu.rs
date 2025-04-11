@@ -1043,7 +1043,7 @@ fn dump_format_b(s: &mut String, cpu: &Cpu, address: i64, word: u32, evaluate: b
     if evaluate && f.rs2 != 0 {
         let _ = write!(s, ":{:x}", cpu.x[f.rs2]);
     }
-    let _ = write!(s, ", {:x}", address.wrapping_add(f.imm as i64));
+    let _ = write!(s, ", {:x}", address.wrapping_add(f.imm));
     0
 }
 
@@ -1139,30 +1139,25 @@ fn dump_format_i_mem(s: &mut String, cpu: &Cpu, _address: i64, word: u32, evalua
 
 struct FormatJ {
     rd: usize,
-    imm: u64,
+    imm: i64,
 }
 
 #[allow(clippy::cast_sign_loss)]
 const fn parse_format_j(word: u32) -> FormatJ {
+    let word = word as i32;
     FormatJ {
         rd: ((word >> 7) & 0x1f) as usize, // [11:7]
-        imm: (
-            match word & 0x8000_0000 { // imm[31:20] = [31]
-                                0x8000_0000 => 0xfff0_0000,
-                                _ => 0
-                        } |
-                        (word & 0x000f_f000) | // imm[19:12] = [19:12]
-                        ((word & 0x0010_0000) >> 9) | // imm[11] = [20]
-                        ((word & 0x7fe0_0000) >> 20)
-            // imm[10:1] = [30:21]
-        ) as i32 as i64 as u64,
+        imm: (word >> 31 << 20 | // imm[31:20] = [31]
+             (word & 0x000f_f000) | // imm[19:12] = [19:12]
+             ((word & 0x0010_0000) >> 9) | // imm[11] = [20]
+             ((word & 0x7fe0_0000) >> 20)) as i64, // imm[10:1] = [30:21]
     }
 }
 
 fn dump_format_j(s: &mut String, _cpu: &Cpu, address: i64, word: u32, _evaluate: bool) -> usize {
     let f = parse_format_j(word);
     *s += get_register_name(f.rd);
-    let _ = write!(s, ", {:x}", address.wrapping_add(f.imm as i64));
+    let _ = write!(s, ", {:x}", address.wrapping_add(f.imm));
     f.rd
 }
 
