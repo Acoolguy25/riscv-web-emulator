@@ -1347,7 +1347,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "AUIPC",
         operation: |cpu, address, word| {
             let f = parse_format_u(word);
-            cpu.write_x(f.rd, address.wrapping_add(f.imm as i64));
+            cpu.write_x(f.rd, address.wrapping_add(f.imm));
             Ok(())
         },
         disassemble: dump_format_u,
@@ -1359,7 +1359,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |cpu, address, word| {
             let f = parse_format_j(word);
             cpu.write_x(f.rd, cpu.pc);
-            cpu.pc = address.wrapping_add(f.imm as i64);
+            cpu.pc = address.wrapping_add(f.imm);
             Ok(())
         },
         disassemble: dump_format_j,
@@ -1371,7 +1371,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |cpu, _address, word| {
             let f = parse_format_i(word);
             let tmp = cpu.pc;
-            cpu.pc = cpu.read_x(f.rs1).wrapping_add(f.imm as i64) & !1;
+            cpu.pc = cpu.read_x(f.rs1).wrapping_add(f.imm) & !1;
             cpu.write_x(f.rd, tmp);
             Ok(())
         },
@@ -1393,7 +1393,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |cpu, address, word| {
             let f = parse_format_b(word);
             if cpu.read_x(f.rs1) == cpu.read_x(f.rs2) {
-                cpu.pc = address.wrapping_add(f.imm as i64);
+                cpu.pc = address.wrapping_add(f.imm);
             }
             Ok(())
         },
@@ -1406,7 +1406,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |cpu, address, word| {
             let f = parse_format_b(word);
             if cpu.read_x(f.rs1) != cpu.read_x(f.rs2) {
-                cpu.pc = address.wrapping_add(f.imm as i64);
+                cpu.pc = address.wrapping_add(f.imm);
             }
             Ok(())
         },
@@ -1419,7 +1419,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |cpu, address, word| {
             let f = parse_format_b(word);
             if cpu.read_x(f.rs1) < cpu.read_x(f.rs2) {
-                cpu.pc = address.wrapping_add(f.imm as i64);
+                cpu.pc = address.wrapping_add(f.imm);
             }
             Ok(())
         },
@@ -1432,7 +1432,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |cpu, address, word| {
             let f = parse_format_b(word);
             if cpu.read_x(f.rs1) >= cpu.read_x(f.rs2) {
-                cpu.pc = address.wrapping_add(f.imm as i64);
+                cpu.pc = address.wrapping_add(f.imm);
             }
             Ok(())
         },
@@ -1445,7 +1445,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |cpu, address, word| {
             let f = parse_format_b(word);
             if (cpu.read_x(f.rs1) as u64) < (cpu.read_x(f.rs2) as u64) {
-                cpu.pc = address.wrapping_add(f.imm as i64);
+                cpu.pc = address.wrapping_add(f.imm);
             }
             Ok(())
         },
@@ -1458,7 +1458,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |cpu, address, word| {
             let f = parse_format_b(word);
             if (cpu.read_x(f.rs1) as u64) >= (cpu.read_x(f.rs2) as u64) {
-                cpu.pc = address.wrapping_add(f.imm as i64);
+                cpu.pc = address.wrapping_add(f.imm);
             }
             Ok(())
         },
