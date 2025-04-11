@@ -207,7 +207,6 @@ impl Sf for Sf32 {
         if (r & NAN_BOX_F32) == NAN_BOX_F32 {
             r
         } else {
-            println!("** unboxing {r:016x} -> QNaN32");
             Self::QNAN
         }
     }

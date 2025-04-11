@@ -188,7 +188,7 @@ impl Clint {
 
     /// Writes to `mtime` register content
     #[allow(dead_code)]
-    pub fn write_mtime(&mut self, mtime: u64) {
+    pub const fn write_mtime(&mut self, mtime: u64) {
         self.mtime_delta = mtime.wrapping_sub(self.mtime_system);
     }
 }
