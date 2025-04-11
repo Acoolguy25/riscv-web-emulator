@@ -255,7 +255,7 @@ impl Cpu {
             return;
         };
 
-        if let Err(e) = (decoded.operation)(self.insn_addr as u64, insn, self) {
+        if let Err(e) = (decoded.operation)(self.insn_addr, insn, self) {
             self.handle_exception(&e);
         }
     }
@@ -998,7 +998,7 @@ struct Instruction {
     mask: u32,
     data: u32, // @TODO: rename
     name: &'static str,
-    operation: fn(address: u64, word: u32, cpu: &mut Cpu) -> Result<(), Trap>,
+    operation: fn(address: i64, word: u32, cpu: &mut Cpu) -> Result<(), Trap>,
     disassemble: fn(s: &mut String, cpu: &Cpu, word: u32, address: u64, evaluate: bool) -> usize,
 }
 
@@ -1360,7 +1360,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "AUIPC",
         operation: |address, word, cpu| {
             let f = parse_format_u(word);
-            cpu.write_x(f.rd, address.wrapping_add(f.imm) as i64);
+            cpu.write_x(f.rd, address.wrapping_add(f.imm as i64));
             Ok(())
         },
         disassemble: dump_format_u,
@@ -1372,7 +1372,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |address, word, cpu| {
             let f = parse_format_j(word);
             cpu.write_x(f.rd, cpu.pc);
-            cpu.pc = address.wrapping_add(f.imm) as i64;
+            cpu.pc = address.wrapping_add(f.imm as i64);
             Ok(())
         },
         disassemble: dump_format_j,
@@ -1406,7 +1406,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |address, word, cpu| {
             let f = parse_format_b(word);
             if cpu.read_x(f.rs1) == cpu.read_x(f.rs2) {
-                cpu.pc = address.wrapping_add(f.imm) as i64;
+                cpu.pc = address.wrapping_add(f.imm as i64);
             }
             Ok(())
         },
@@ -1419,7 +1419,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |address, word, cpu| {
             let f = parse_format_b(word);
             if cpu.read_x(f.rs1) != cpu.read_x(f.rs2) {
-                cpu.pc = address.wrapping_add(f.imm) as i64;
+                cpu.pc = address.wrapping_add(f.imm as i64);
             }
             Ok(())
         },
@@ -1432,7 +1432,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |address, word, cpu| {
             let f = parse_format_b(word);
             if cpu.read_x(f.rs1) < cpu.read_x(f.rs2) {
-                cpu.pc = address.wrapping_add(f.imm) as i64;
+                cpu.pc = address.wrapping_add(f.imm as i64);
             }
             Ok(())
         },
@@ -1445,7 +1445,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |address, word, cpu| {
             let f = parse_format_b(word);
             if cpu.read_x(f.rs1) >= cpu.read_x(f.rs2) {
-                cpu.pc = address.wrapping_add(f.imm) as i64;
+                cpu.pc = address.wrapping_add(f.imm as i64);
             }
             Ok(())
         },
@@ -1458,7 +1458,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |address, word, cpu| {
             let f = parse_format_b(word);
             if (cpu.read_x(f.rs1) as u64) < (cpu.read_x(f.rs2) as u64) {
-                cpu.pc = address.wrapping_add(f.imm) as i64;
+                cpu.pc = address.wrapping_add(f.imm as i64);
             }
             Ok(())
         },
@@ -1471,7 +1471,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |address, word, cpu| {
             let f = parse_format_b(word);
             if (cpu.read_x(f.rs1) as u64) >= (cpu.read_x(f.rs2) as u64) {
-                cpu.pc = address.wrapping_add(f.imm) as i64;
+                cpu.pc = address.wrapping_add(f.imm as i64);
             }
             Ok(())
         },
@@ -1823,15 +1823,15 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         data: 0x00000073,
         name: "ECALL",
         operation: |address, _word, cpu| {
-            let exception_type = match cpu.privilege_mode {
+            let trap_type = match cpu.privilege_mode {
                 PrivilegeMode::User => TrapType::EnvironmentCallFromUMode,
                 PrivilegeMode::Supervisor => TrapType::EnvironmentCallFromSMode,
                 PrivilegeMode::Machine => TrapType::EnvironmentCallFromMMode,
                 PrivilegeMode::Reserved => panic!("Unknown Privilege mode"),
             };
             Err(Trap {
-                trap_type: exception_type,
-                value: address as i64,
+                trap_type,
+                value: address,
             })
         },
         disassemble: dump_empty,
