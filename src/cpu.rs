@@ -1017,24 +1017,19 @@ const fn decompress(addr: i64, insn: u32) -> (u32, i64) {
 struct FormatB {
     rs1: usize,
     rs2: usize,
-    imm: u64,
+    imm: i64,
 }
 
 #[allow(clippy::cast_sign_loss)]
 const fn parse_format_b(word: u32) -> FormatB {
+    let word = word as i32;
     FormatB {
         rs1: ((word >> 15) & 0x1f) as usize, // [19:15]
         rs2: ((word >> 20) & 0x1f) as usize, // [24:20]
-        imm: (
-            match word & 0x8000_0000 { // imm[31:12] = [31]
-                                0x8000_0000 => 0xffff_f000,
-                                _ => 0
-                        } |
-                        ((word << 4) & 0x0000_0800) | // imm[11] = [7]
-                        ((word >> 20) & 0x0000_07e0) | // imm[10:5] = [30:25]
-                        ((word >> 7) & 0x0000_001e)
-            // imm[4:1] = [11:8]
-        ) as i32 as i64 as u64,
+        imm: (word >> 31 << 12 | // imm[31:12] = [31]
+            ((word << 4) & 0x0000_0800) | // imm[11] = [7]
+            ((word >> 20) & 0x0000_07e0) | // imm[10:5] = [30:25]
+            ((word >> 7) & 0x0000_001e)) as i64, // imm[4:1] = [11:8]
     }
 }
 
