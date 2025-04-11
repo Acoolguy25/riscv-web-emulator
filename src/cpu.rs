@@ -255,7 +255,7 @@ impl Cpu {
             return;
         };
 
-        if let Err(e) = (decoded.operation)(self.insn_addr, insn, self) {
+        if let Err(e) = (decoded.operation)(self, self.insn_addr, insn) {
             self.handle_exception(&e);
         }
     }
@@ -736,7 +736,7 @@ impl Cpu {
             word32 &= 0xffff;
             let _ = write!(s, "{addr:016x} {word32:04x}     {asm:7} ");
         }
-        (decoded.disassemble)(s, self, insn, addr, eval)
+        (decoded.disassemble)(s, self, addr, insn, eval)
     }
 
     #[allow(clippy::cast_sign_loss)]
@@ -998,8 +998,8 @@ struct Instruction {
     mask: u32,
     data: u32, // @TODO: rename
     name: &'static str,
-    operation: fn(address: i64, word: u32, cpu: &mut Cpu) -> Result<(), Trap>,
-    disassemble: fn(s: &mut String, cpu: &Cpu, word: u32, address: i64, evaluate: bool) -> usize,
+    operation: fn(cpu: &mut Cpu, address: i64, word: u32) -> Result<(), Trap>,
+    disassemble: fn(s: &mut String, cpu: &Cpu, address: i64, word: u32, evaluate: bool) -> usize,
 }
 
 #[inline]
@@ -1038,7 +1038,7 @@ const fn parse_format_b(word: u32) -> FormatB {
     }
 }
 
-fn dump_format_b(s: &mut String, cpu: &Cpu, word: u32, address: i64, evaluate: bool) -> usize {
+fn dump_format_b(s: &mut String, cpu: &Cpu, address: i64, word: u32, evaluate: bool) -> usize {
     let f = parse_format_b(word);
     *s += get_register_name(f.rs1);
     if evaluate && f.rs1 != 0 {
@@ -1067,7 +1067,7 @@ const fn parse_format_csr(word: u32) -> FormatCSR {
 }
 
 #[allow(clippy::option_if_let_else)] // Clippy is loosing it
-fn dump_format_csr(s: &mut String, cpu: &Cpu, word: u32, _address: i64, evaluate: bool) -> usize {
+fn dump_format_csr(s: &mut String, cpu: &Cpu, _address: i64, word: u32, evaluate: bool) -> usize {
     let f = parse_format_csr(word);
     *s += get_register_name(f.rd);
     let _ = write!(s, ", ");
@@ -1120,7 +1120,7 @@ const fn parse_format_i(word: u32) -> FormatI {
     }
 }
 
-fn dump_format_i(s: &mut String, cpu: &Cpu, word: u32, _address: i64, evaluate: bool) -> usize {
+fn dump_format_i(s: &mut String, cpu: &Cpu, _address: i64, word: u32, evaluate: bool) -> usize {
     let f = parse_format_i(word);
     *s += get_register_name(f.rd);
     let _ = write!(s, ", {}", get_register_name(f.rs1));
@@ -1131,7 +1131,7 @@ fn dump_format_i(s: &mut String, cpu: &Cpu, word: u32, _address: i64, evaluate: 
     f.rd
 }
 
-fn dump_format_i_mem(s: &mut String, cpu: &Cpu, word: u32, _address: i64, evaluate: bool) -> usize {
+fn dump_format_i_mem(s: &mut String, cpu: &Cpu, _address: i64, word: u32, evaluate: bool) -> usize {
     let f = parse_format_i(word);
     *s += get_register_name(f.rd);
     let _ = write!(s, ", {:x}({}", f.imm, get_register_name(f.rs1));
@@ -1164,7 +1164,7 @@ const fn parse_format_j(word: u32) -> FormatJ {
     }
 }
 
-fn dump_format_j(s: &mut String, _cpu: &Cpu, word: u32, address: i64, _evaluate: bool) -> usize {
+fn dump_format_j(s: &mut String, _cpu: &Cpu, address: i64, word: u32, _evaluate: bool) -> usize {
     let f = parse_format_j(word);
     *s += get_register_name(f.rd);
     let _ = write!(s, ", {:x}", address.wrapping_add(f.imm as i64));
@@ -1188,7 +1188,7 @@ const fn parse_format_r(word: u32) -> FormatR {
     }
 }
 
-fn dump_format_r(s: &mut String, cpu: &Cpu, word: u32, _address: i64, evaluate: bool) -> usize {
+fn dump_format_r(s: &mut String, cpu: &Cpu, _address: i64, word: u32, evaluate: bool) -> usize {
     let f = parse_format_r(word);
     *s += get_register_name(f.rd);
     let _ = write!(s, ", ");
@@ -1203,7 +1203,7 @@ fn dump_format_r(s: &mut String, cpu: &Cpu, word: u32, _address: i64, evaluate: 
     f.rd
 }
 
-fn dump_format_r_f(s: &mut String, cpu: &Cpu, word: u32, _address: i64, evaluate: bool) -> usize {
+fn dump_format_r_f(s: &mut String, cpu: &Cpu, _address: i64, word: u32, evaluate: bool) -> usize {
     let f = parse_format_r(word);
     let _ = write!(s, "ft{}, ", f.rd);
     *s += get_register_name(f.rs1);
@@ -1236,7 +1236,7 @@ const fn parse_format_r2(word: u32) -> FormatR2 {
     }
 }
 
-fn dump_format_r2(s: &mut String, cpu: &Cpu, word: u32, _address: i64, evaluate: bool) -> usize {
+fn dump_format_r2(s: &mut String, cpu: &Cpu, _address: i64, word: u32, evaluate: bool) -> usize {
     let f = parse_format_r2(word);
     *s += get_register_name(f.rd);
     let _ = write!(s, ", f{}", f.rs1);
@@ -1276,7 +1276,7 @@ const fn parse_format_s(word: u32) -> FormatS {
     }
 }
 
-fn dump_format_s(s: &mut String, cpu: &Cpu, word: u32, _address: i64, evaluate: bool) -> usize {
+fn dump_format_s(s: &mut String, cpu: &Cpu, _address: i64, word: u32, evaluate: bool) -> usize {
     let f = parse_format_s(word);
     *s += get_register_name(f.rs2);
     if evaluate && f.rs2 != 0 {
@@ -1305,7 +1305,7 @@ const fn parse_format_u(word: u32) -> FormatU {
     }
 }
 
-fn dump_format_u(s: &mut String, _cpu: &Cpu, word: u32, _address: i64, _evaluate: bool) -> usize {
+fn dump_format_u(s: &mut String, _cpu: &Cpu, _address: i64, word: u32, _evaluate: bool) -> usize {
     let f = parse_format_u(word);
     *s += get_register_name(f.rd);
     let _ = write!(s, ", {:x}", f.imm);
@@ -1317,8 +1317,8 @@ fn dump_format_u(s: &mut String, _cpu: &Cpu, word: u32, _address: i64, _evaluate
 const fn dump_empty(
     _s: &mut String,
     _cpu: &Cpu,
-    _word: u32,
     _address: i64,
+    _word: u32,
     _evaluate: bool,
 ) -> usize {
     0
@@ -1347,7 +1347,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000007f,
         data: 0x00000037,
         name: "LUI",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_u(word);
             cpu.write_x(f.rd, f.imm as i64);
             Ok(())
@@ -1358,7 +1358,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000007f,
         data: 0x00000017,
         name: "AUIPC",
-        operation: |address, word, cpu| {
+        operation: |cpu, address, word| {
             let f = parse_format_u(word);
             cpu.write_x(f.rd, address.wrapping_add(f.imm as i64));
             Ok(())
@@ -1369,7 +1369,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000007f,
         data: 0x0000006f,
         name: "JAL",
-        operation: |address, word, cpu| {
+        operation: |cpu, address, word| {
             let f = parse_format_j(word);
             cpu.write_x(f.rd, cpu.pc);
             cpu.pc = address.wrapping_add(f.imm as i64);
@@ -1381,14 +1381,14 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00000067,
         name: "JALR",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_i(word);
             let tmp = cpu.pc;
             cpu.pc = cpu.read_x(f.rs1).wrapping_add(f.imm as i64) & !1;
             cpu.write_x(f.rd, tmp);
             Ok(())
         },
-        disassemble: |s, cpu, word, _address, evaluate| {
+        disassemble: |s, cpu, _address, word, evaluate| {
             let f = parse_format_i(word);
             *s += get_register_name(f.rd);
             let _ = write!(s, ", {:x}({}", f.imm, get_register_name(f.rs1));
@@ -1403,7 +1403,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00000063,
         name: "BEQ",
-        operation: |address, word, cpu| {
+        operation: |cpu, address, word| {
             let f = parse_format_b(word);
             if cpu.read_x(f.rs1) == cpu.read_x(f.rs2) {
                 cpu.pc = address.wrapping_add(f.imm as i64);
@@ -1416,7 +1416,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00001063,
         name: "BNE",
-        operation: |address, word, cpu| {
+        operation: |cpu, address, word| {
             let f = parse_format_b(word);
             if cpu.read_x(f.rs1) != cpu.read_x(f.rs2) {
                 cpu.pc = address.wrapping_add(f.imm as i64);
@@ -1429,7 +1429,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00004063,
         name: "BLT",
-        operation: |address, word, cpu| {
+        operation: |cpu, address, word| {
             let f = parse_format_b(word);
             if cpu.read_x(f.rs1) < cpu.read_x(f.rs2) {
                 cpu.pc = address.wrapping_add(f.imm as i64);
@@ -1442,7 +1442,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00005063,
         name: "BGE",
-        operation: |address, word, cpu| {
+        operation: |cpu, address, word| {
             let f = parse_format_b(word);
             if cpu.read_x(f.rs1) >= cpu.read_x(f.rs2) {
                 cpu.pc = address.wrapping_add(f.imm as i64);
@@ -1455,7 +1455,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00006063,
         name: "BLTU",
-        operation: |address, word, cpu| {
+        operation: |cpu, address, word| {
             let f = parse_format_b(word);
             if (cpu.read_x(f.rs1) as u64) < (cpu.read_x(f.rs2) as u64) {
                 cpu.pc = address.wrapping_add(f.imm as i64);
@@ -1468,7 +1468,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00007063,
         name: "BGEU",
-        operation: |address, word, cpu| {
+        operation: |cpu, address, word| {
             let f = parse_format_b(word);
             if (cpu.read_x(f.rs1) as u64) >= (cpu.read_x(f.rs2) as u64) {
                 cpu.pc = address.wrapping_add(f.imm as i64);
@@ -1481,7 +1481,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00000003,
         name: "LB",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_i(word);
             let s1 = cpu.read_x(f.rs1);
             if let Some(v) = cpu.memop(Read, s1, f.imm, 0, 1) {
@@ -1496,7 +1496,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00001003,
         name: "LH",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_i(word);
             let s1 = cpu.read_x(f.rs1);
             if let Some(v) = cpu.memop(Read, s1, f.imm, 0, 2) {
@@ -1511,7 +1511,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00002003,
         name: "LW",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_i(word);
             let s1 = cpu.read_x(f.rs1);
             if let Some(v) = cpu.memop(Read, s1, f.imm, 0, 4) {
@@ -1525,7 +1525,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00004003,
         name: "LBU",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_i(word);
             let s1 = cpu.read_x(f.rs1);
             if let Some(v) = cpu.memop(Read, s1, f.imm, 0, 1) {
@@ -1539,7 +1539,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00005003,
         name: "LHU",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_i(word);
             let s1 = cpu.read_x(f.rs1);
             if let Some(v) = cpu.memop(Read, s1, f.imm, 0, 2) {
@@ -1553,7 +1553,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00000023,
         name: "SB",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_s(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -1566,7 +1566,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00001023,
         name: "SH",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_s(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -1579,7 +1579,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00002023,
         name: "SW",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_s(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -1592,7 +1592,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00000013,
         name: "ADDI",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_i(word);
             let s1 = cpu.read_x(f.rs1);
             cpu.write_x(f.rd, s1.wrapping_add(f.imm));
@@ -1604,7 +1604,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00002013,
         name: "SLTI",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_i(word);
             let s1 = cpu.read_x(f.rs1);
             cpu.write_x(f.rd, i64::from(s1 < f.imm));
@@ -1616,7 +1616,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00003013,
         name: "SLTIU",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_i(word);
             let s1 = cpu.read_x(f.rs1);
             cpu.write_x(f.rd, i64::from((s1 as u64) < (f.imm as u64)));
@@ -1628,7 +1628,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00004013,
         name: "XORI",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_i(word);
             let s1 = cpu.read_x(f.rs1);
             cpu.write_x(f.rd, s1 ^ f.imm);
@@ -1640,7 +1640,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00006013,
         name: "ORI",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_i(word);
             let s1 = cpu.read_x(f.rs1);
             cpu.write_x(f.rd, s1 | f.imm);
@@ -1652,7 +1652,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00007013,
         name: "ANDI",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_i(word);
             let s1 = cpu.read_x(f.rs1);
             cpu.write_x(f.rd, s1 & f.imm);
@@ -1667,7 +1667,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x00000033,
         name: "ADD",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -1680,7 +1680,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x40000033,
         name: "SUB",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -1693,7 +1693,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x00001033,
         name: "SLL",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -1706,7 +1706,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x00002033,
         name: "SLT",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -1719,7 +1719,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x00003033,
         name: "SLTU",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1) as u64;
             let s2 = cpu.read_x(f.rs2) as u64;
@@ -1732,7 +1732,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x00004033,
         name: "XOR",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -1745,7 +1745,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x00005033,
         name: "SRL",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1) as u64;
             let s2 = cpu.read_x(f.rs2) as u32;
@@ -1758,7 +1758,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x40005033,
         name: "SRA",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -1771,7 +1771,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x00006033,
         name: "OR",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -1784,7 +1784,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x00007033,
         name: "AND",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -1797,7 +1797,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xf000707f,
         data: 0x0000000f,
         name: "FENCE",
-        operation: |_cpu, word, _address| {
+        operation: |_cpu, _address, word| {
             if word == 0x0100000f {
                 // Nothing to do here, but it would be interesting to see
                 // it used.
@@ -1812,7 +1812,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xf000707f,
         data: 0x8000000f,
         name: "FENCE.TSO",
-        operation: |_cpu, _word, _address| {
+        operation: |_cpu, __address, _word| {
             // Fence memory ops (we are currently TSO already)
             Ok(())
         },
@@ -1822,7 +1822,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xffffffff,
         data: 0x00000073,
         name: "ECALL",
-        operation: |address, _word, cpu| {
+        operation: |cpu, address, _word| {
             let trap_type = match cpu.privilege_mode {
                 PrivilegeMode::User => TrapType::EnvironmentCallFromUMode,
                 PrivilegeMode::Supervisor => TrapType::EnvironmentCallFromSMode,
@@ -1840,7 +1840,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xffffffff,
         data: 0x00100073,
         name: "EBREAK",
-        operation: |_cpu, word, _address| {
+        operation: |_cpu, _address, word| {
             log::info!(
                 "** Handling ebreak requires handling debug mode; reporting it as an illegal instruction **"
             );
@@ -1856,7 +1856,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00006003,
         name: "LWU",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_i(word);
             let s1 = cpu.read_x(f.rs1);
             if let Some(v) = cpu.memop(Read, s1, f.imm, 0, 4) {
@@ -1870,7 +1870,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00003003,
         name: "LD",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_i(word);
             let s1 = cpu.read_x(f.rs1);
             if let Some(v) = cpu.memop(Read, s1, f.imm, 0, 8) {
@@ -1884,7 +1884,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00003023,
         name: "SD",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_s(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -1897,7 +1897,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfc00707f, // RV64I version!
         data: 0x00001013,
         name: "SLLI",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let mask = 0x3f;
             let shamt = (word >> 20) & mask;
@@ -1911,7 +1911,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfc00707f,
         data: 0x00005013,
         name: "SRLI",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let mask = 0x3f;
             let shamt = (word >> 20) & mask;
@@ -1925,7 +1925,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfc00707f,
         data: 0x40005013,
         name: "SRAI",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let mask = 0x3f;
             let shamt = (word >> 20) & mask;
@@ -1939,7 +1939,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x0000001b,
         name: "ADDIW",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_i(word);
             let s1 = cpu.read_x(f.rs1);
             cpu.write_x(f.rd, i64::from(s1.wrapping_add(f.imm) as i32));
@@ -1951,7 +1951,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x0000101b,
         name: "SLLIW",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let shamt = f.rs2 as u32;
             let s1 = cpu.read_x(f.rs1);
@@ -1964,7 +1964,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x0000501b,
         name: "SRLIW",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let mask = 0x3f;
             let shamt = (word >> 20) & mask;
@@ -1978,7 +1978,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x4000501b,
         name: "SRAIW",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let shamt = (word >> 20) & 0x1f;
             let s1 = cpu.read_x(f.rs1);
@@ -1991,7 +1991,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x0000003b,
         name: "ADDW",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -2004,7 +2004,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x4000003b,
         name: "SUBW",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -2017,7 +2017,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x0000103b,
         name: "SLLW",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -2030,7 +2030,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x0000503b,
         name: "SRLW",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -2043,7 +2043,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x4000503b,
         name: "SRAW",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -2057,7 +2057,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xffffffff,
         data: 0x0000100f,
         name: "FENCE.I",
-        operation: |_address, _word, cpu| {
+        operation: |cpu, _address, _word| {
             // Flush any cached instrutions.  We have none so far.
             cpu.reservation = None;
             Ok(())
@@ -2069,7 +2069,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00001073,
         name: "CSRRW",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_csr(word);
 
             let tmp = cpu.read_x(f.rs);
@@ -2089,7 +2089,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00002073,
         name: "CSRRS",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_csr(word);
             let data = cpu.read_csr(f.csr)? as i64;
             if f.rs != 0 {
@@ -2105,7 +2105,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00003073,
         name: "CSRRC",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_csr(word);
             let data = cpu.read_csr(f.csr)? as i64;
             if f.rs != 0 {
@@ -2121,7 +2121,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00005073,
         name: "CSRRWI",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_csr(word);
 
             if f.rd == 0 {
@@ -2140,7 +2140,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00006073,
         name: "CSRRSI",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_csr(word);
             let data = cpu.read_csr(f.csr)? as i64;
             if f.rs != 0 {
@@ -2155,7 +2155,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00007073,
         name: "CSRRCI",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_csr(word);
             let data = cpu.read_csr(f.csr)? as i64;
             if f.rs != 0 {
@@ -2171,7 +2171,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x02000033,
         name: "MUL",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -2184,7 +2184,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x02001033,
         name: "MULH",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -2197,7 +2197,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x02002033,
         name: "MULHSU",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -2213,7 +2213,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x02003033,
         name: "MULHU",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = u128::from(cpu.read_x(f.rs1) as u64);
             let s2 = u128::from(cpu.read_x(f.rs2) as u64);
@@ -2226,7 +2226,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x02004033,
         name: "DIV",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let dividend = cpu.read_x(f.rs1);
             let divisor = cpu.read_x(f.rs2);
@@ -2245,7 +2245,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x02005033,
         name: "DIVU",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let dividend = cpu.read_x(f.rs1) as u64;
             let divisor = cpu.read_x(f.rs2) as u64;
@@ -2262,7 +2262,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x02006033,
         name: "REM",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -2281,7 +2281,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x02007033,
         name: "REMU",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1) as u64;
             let s2 = cpu.read_x(f.rs2) as u64;
@@ -2301,7 +2301,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x0200003b,
         name: "MULW",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -2314,7 +2314,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x0200403b,
         name: "DIVW",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1) as i32;
             let s2 = cpu.read_x(f.rs2) as i32;
@@ -2333,7 +2333,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x0200503b,
         name: "DIVUW",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1) as u32;
             let s2 = cpu.read_x(f.rs2) as u32;
@@ -2350,7 +2350,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x0200603b,
         name: "REMW",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1) as i32;
             let s2 = cpu.read_x(f.rs2) as i32;
@@ -2369,7 +2369,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x0200703b,
         name: "REMUW",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1) as u32;
             let s2 = cpu.read_x(f.rs2) as u32;
@@ -2389,7 +2389,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xf9f0707f,
         data: 0x1000202f,
         name: "LR.W",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             // @TODO: Implement properly
             let va = cpu.read_x(f.rs1);
@@ -2407,7 +2407,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xf800707f,
         data: 0x1800202f,
         name: "SC.W",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let va = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -2429,7 +2429,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xf800707f,
         data: 0x0800202f,
         name: "AMOSWAP.W",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1) as u64;
             let s2 = cpu.read_x(f.rs2) as u32;
@@ -2444,7 +2444,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xf800707f,
         data: 0x0000202f,
         name: "AMOADD.W",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1) as u64;
             let s2 = cpu.read_x(f.rs2) as u32;
@@ -2459,7 +2459,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xf800707f,
         data: 0x2000202f,
         name: "AMOXOR.W",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1) as u64;
             let s2 = cpu.read_x(f.rs2) as u32;
@@ -2474,7 +2474,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xf800707f,
         data: 0x6000202f,
         name: "AMOAND.W",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1) as u64;
             let s2 = cpu.read_x(f.rs2);
@@ -2489,7 +2489,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xf800707f,
         data: 0x4000202f,
         name: "AMOOR.W",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1) as u64;
             let s2 = cpu.read_x(f.rs2);
@@ -2504,7 +2504,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xf800707f,
         data: 0x8000202f,
         name: "AMOMIN.W",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1) as u64;
             let s2 = cpu.read_x(f.rs2) as i32;
@@ -2520,7 +2520,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xf800707f,
         data: 0xa000202f,
         name: "AMOMAX.W",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1) as u64;
             let s2 = cpu.read_x(f.rs2) as i32;
@@ -2536,7 +2536,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xf800707f,
         data: 0xc000202f,
         name: "AMOMINU.W",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1) as u64;
             let s2 = cpu.read_x(f.rs2) as u32;
@@ -2552,7 +2552,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xf800707f,
         data: 0xe000202f,
         name: "AMOMAXU.W",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1) as u64;
             let s2 = cpu.read_x(f.rs2) as u32;
@@ -2569,7 +2569,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xf9f0707f,
         data: 0x1000302f,
         name: "LR.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let va = cpu.read_x(f.rs1);
             let data = cpu.mmu.load_virt_u64(va as u64)?;
@@ -2586,7 +2586,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xf800707f,
         data: 0x1800302f,
         name: "SC.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let va = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -2608,7 +2608,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xf800707f,
         data: 0x0800302f,
         name: "AMOSWAP.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1) as u64;
             let s2 = cpu.read_x(f.rs2) as u64;
@@ -2623,7 +2623,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xf800707f,
         data: 0x0000302f,
         name: "AMOADD.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1) as u64;
             let s2 = cpu.read_x(f.rs2) as u64;
@@ -2638,7 +2638,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xf800707f,
         data: 0x2000302f,
         name: "AMOXOR.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1) as u64;
             let s2 = cpu.read_x(f.rs2) as u64;
@@ -2653,7 +2653,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xf800707f,
         data: 0x6000302f,
         name: "AMOAND.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1) as u64;
             let s2 = cpu.read_x(f.rs2) as u64;
@@ -2668,7 +2668,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xf800707f,
         data: 0x4000302f,
         name: "AMOOR.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1) as u64;
             let s2 = cpu.read_x(f.rs2) as u64;
@@ -2683,7 +2683,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xf800707f,
         data: 0x8000302f,
         name: "AMOMIN.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1) as u64;
             let s2 = cpu.read_x(f.rs2);
@@ -2699,7 +2699,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xf800707f,
         data: 0xa000302f,
         name: "AMOMAX.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1) as u64;
             let s2 = cpu.read_x(f.rs2);
@@ -2715,7 +2715,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xf800707f,
         data: 0xc000302f,
         name: "AMOMINU.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1) as u64;
             let s2 = cpu.read_x(f.rs2) as u64;
@@ -2731,7 +2731,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xf800707f,
         data: 0xe000302f,
         name: "AMOMAXU.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1) as u64;
             let s2 = cpu.read_x(f.rs2) as u64;
@@ -2748,7 +2748,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00002007,
         name: "FLW",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_i(word);
             cpu.check_float_access(0)?;
             let s1 = cpu.read_x(f.rs1);
@@ -2763,7 +2763,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00002027,
         name: "FSW",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             cpu.check_float_access(0)?;
             let f = parse_format_s(word);
             let s1 = cpu.read_x(f.rs1);
@@ -2776,7 +2776,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0600007f,
         data: 0x00000043,
         name: "FMADD.S",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r2(word);
             cpu.check_float_access(f.rm)?;
             // XXX Update fflags
@@ -2792,7 +2792,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0600007f,
         data: 0x00000047,
         name: "FMSUB.S",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r2(word);
             cpu.check_float_access(f.rm)?;
             cpu.write_f32(
@@ -2808,7 +2808,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0600007f,
         data: 0x0000004b,
         name: "FNMSUB.S",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r2(word);
             cpu.check_float_access(f.rm)?;
             cpu.write_f32(
@@ -2825,7 +2825,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0600007f,
         data: 0x0000004f,
         name: "FNMADD.S",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r2(word);
             cpu.check_float_access(f.rm)?;
             cpu.write_f32(
@@ -2842,7 +2842,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00007f,
         data: 0x00000053,
         name: "FADD.S",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
             cpu.write_f32(f.rd, cpu.read_f32(f.rs1) + cpu.read_f32(f.rs2));
@@ -2854,7 +2854,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00007f,
         data: 0x08000053,
         name: "FSUB.S",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
             cpu.write_f32(f.rd, cpu.read_f32(f.rs1) - cpu.read_f32(f.rs2));
@@ -2866,7 +2866,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00007f,
         data: 0x10000053,
         name: "FMUL.S",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             // @TODO: Update fcsr
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
@@ -2879,7 +2879,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00007f,
         data: 0x18000053,
         name: "FDIV.S",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
             //let rm = cpu.get_rm(word);
@@ -2906,7 +2906,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfff0007f,
         data: 0x58000053,
         name: "FSQRT.S",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
             cpu.write_f32(f.rd, cpu.read_f32(f.rs1).sqrt());
@@ -2918,7 +2918,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x20000053,
         name: "FSGNJ.S",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(0)?;
             let rs1_bits = Sf32::unbox(cpu.read_f(f.rs1));
@@ -2933,7 +2933,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x20001053,
         name: "FSGNJN.S",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(0)?;
             let rs1_bits = Sf32::unbox(cpu.read_f(f.rs1));
@@ -2948,7 +2948,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x20002053,
         name: "FSGNJX.S",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(0)?;
             let rs1_bits = Sf32::unbox(cpu.read_f(f.rs1));
@@ -2963,7 +2963,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x28000053,
         name: "FMIN.S",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(0)?;
             let (f1, f2) = (cpu.read_f32(f.rs1), cpu.read_f32(f.rs2));
@@ -2977,7 +2977,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x28001053,
         name: "FMAX.S",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(0)?;
             let (f1, f2) = (cpu.read_f32(f.rs1), cpu.read_f32(f.rs2));
@@ -2991,7 +2991,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfff0007f,
         data: 0xc0000053,
         name: "FCVT.W.S",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
             cpu.write_x(f.rd, i64::from(cpu.read_f32(f.rs1) as i32));
@@ -3003,7 +3003,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfff0007f,
         data: 0xc0100053,
         name: "FCVT.WU.S",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
             cpu.write_x(f.rd, i64::from(cpu.read_f32(f.rs1) as u32));
@@ -3015,7 +3015,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfff0707f,
         data: 0xe0000053,
         name: "FMV.X.W",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(0)?;
             cpu.write_x(f.rd, i64::from(cpu.read_f(f.rs1) as i32));
@@ -3027,7 +3027,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0xa0002053,
         name: "FEQ.S",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(0)?;
             let (r, fflags) = Sf32::feq(cpu.read_f(f.rs1), cpu.read_f(f.rs2));
@@ -3041,7 +3041,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0xa0001053,
         name: "FLT.S",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(0)?;
             let (r, fflags) = Sf32::flt(cpu.read_f(f.rs1), cpu.read_f(f.rs2));
@@ -3055,7 +3055,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0xa0000053,
         name: "FLE.S",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(0)?;
             let (r, fflags) = Sf32::fle(cpu.read_f(f.rs1), cpu.read_f(f.rs2));
@@ -3069,7 +3069,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfff0707f,
         data: 0xe0001053,
         name: "FCLASS.S",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(0)?;
             cpu.write_x(f.rd, 1 << Sf32::fclass(cpu.read_f(f.rs1)) as usize);
@@ -3081,7 +3081,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfff0007f,
         data: 0xd0000053,
         name: "FCVT.S.W",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
             let (r, fflags) = cvt_i32_sf32(cpu.read_x(f.rs1), cpu.get_rm(f.funct3));
@@ -3095,7 +3095,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfff0007f,
         data: 0xd0100053,
         name: "FCVT.S.WU",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
             let (r, fflags) = cvt_u32_sf32(cpu.read_x(f.rs1), cpu.get_rm(f.funct3));
@@ -3109,7 +3109,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfff0707f,
         data: 0xf0000053,
         name: "FMV.W.X",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
             let s1 = cpu.read_x(f.rs1);
@@ -3123,7 +3123,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfff0007f,
         data: 0xc0200053,
         name: "FCVT.L.S",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
             cpu.write_x(f.rd, cpu.read_f32(f.rs1) as i64);
@@ -3135,7 +3135,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfff0007f,
         data: 0xc0300053,
         name: "FCVT.LU.S",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
             cpu.write_x(f.rd, cpu.read_f32(f.rs1) as u64 as i64);
@@ -3147,7 +3147,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfff0007f,
         data: 0xd0200053,
         name: "FCVT.S.L",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
             let (r, fflags) = cvt_i64_sf32(cpu.read_x(f.rs1), cpu.get_rm(f.funct3));
@@ -3161,7 +3161,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfff0007f,
         data: 0xd0300053,
         name: "FCVT.S.LU",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
             let (r, fflags) = cvt_u64_sf32(cpu.read_x(f.rs1), cpu.get_rm(f.funct3));
@@ -3178,7 +3178,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00003007,
         name: "FLD",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_i(word);
             cpu.check_float_access(0)?;
             let s1 = cpu.read_x(f.rs1);
@@ -3193,7 +3193,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0000707f,
         data: 0x00003027,
         name: "FSD",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             cpu.check_float_access(0)?;
             let f = parse_format_s(word);
             let s1 = cpu.read_x(f.rs1);
@@ -3206,7 +3206,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0600007f,
         data: 0x02000043, // Example 7287f7c3 fmadd.d fa5,fa5,fs0,fa4
         name: "FMADD.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r2(word);
             cpu.check_float_access(f.rm)?;
             // XXX Update fflf.rmags
@@ -3223,7 +3223,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0600007f,
         data: 0x02000047,
         name: "FMSUB.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r2(word);
             cpu.check_float_access(f.rm)?;
             cpu.write_f64(
@@ -3239,7 +3239,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0600007f,
         data: 0x0200004b,
         name: "FNMSUB.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r2(word);
             cpu.check_float_access(f.rm)?;
             cpu.write_f64(
@@ -3256,7 +3256,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0x0600007f,
         data: 0x0200004f,
         name: "FNMADD.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r2(word);
             cpu.check_float_access(f.rm)?;
             cpu.write_f64(
@@ -3273,7 +3273,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00007f,
         data: 0x02000053,
         name: "FADD.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
             cpu.write_f64(f.rd, cpu.read_f64(f.rs1) + cpu.read_f64(f.rs2));
@@ -3285,7 +3285,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00007f,
         data: 0x0a000053,
         name: "FSUB.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
             cpu.write_f64(f.rd, cpu.read_f64(f.rs1) - cpu.read_f64(f.rs2));
@@ -3297,7 +3297,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00007f,
         data: 0x12000053,
         name: "FMUL.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             // @TODO: Update fcsr
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
@@ -3310,7 +3310,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00007f,
         data: 0x1a000053,
         name: "FDIV.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
             let s1 = cpu.read_f64(f.rs1);
@@ -3334,7 +3334,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfff0007f,
         data: 0x5a000053,
         name: "FSQRT.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
             cpu.write_f64(f.rd, cpu.read_f64(f.rs1).sqrt());
@@ -3346,7 +3346,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x22000053,
         name: "FSGNJ.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(0)?;
             let rs1_bits = cpu.read_f(f.rs1);
@@ -3361,7 +3361,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x22001053,
         name: "FSGNJN.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(0)?;
             let rs1_bits = cpu.read_f(f.rs1);
@@ -3376,7 +3376,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x22002053,
         name: "FSGNJX.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(0)?;
             let rs1_bits = cpu.read_f(f.rs1);
@@ -3391,7 +3391,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x2A000053,
         name: "FMIN.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(0)?;
             let (f1, f2) = (cpu.read_f64(f.rs1), cpu.read_f64(f.rs2));
@@ -3405,7 +3405,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x2A001053,
         name: "FMAX.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(0)?;
             let (f1, f2) = (cpu.read_f64(f.rs1), cpu.read_f64(f.rs2));
@@ -3419,7 +3419,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfff0007f,
         data: 0x40100053,
         name: "FCVT.S.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
             cpu.write_f32(f.rd, cpu.read_f64(f.rs1) as f32);
@@ -3431,7 +3431,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfff0007f,
         data: 0x42000053,
         name: "FCVT.D.S",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
             let (v, fflags) = fp::fcvt_d_s(cpu.read_f(f.rs1));
@@ -3445,7 +3445,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0xa2002053,
         name: "FEQ.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(0)?;
             let (r, fflags) = Sf64::feq(cpu.read_f(f.rs1), cpu.read_f(f.rs2));
@@ -3460,7 +3460,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0xa2001053,
         name: "FLT.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(0)?;
             let (r, fflags) = Sf64::flt(cpu.read_f(f.rs1), cpu.read_f(f.rs2));
@@ -3474,7 +3474,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0xa2000053,
         name: "FLE.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(0)?;
             let (r, fflags) = Sf64::fle(cpu.read_f(f.rs1), cpu.read_f(f.rs2));
@@ -3488,7 +3488,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfff0707f,
         data: 0xe2001053,
         name: "FCLASS.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             cpu.check_float_access(0)?;
             let f = parse_format_r(word);
             cpu.write_x(f.rd, 1 << Sf64::fclass(cpu.read_f(f.rs1)) as usize);
@@ -3500,7 +3500,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfff0007f,
         data: 0xc2000053,
         name: "FCVT.W.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
             cpu.write_x(f.rd, i64::from(cpu.read_f64(f.rs1) as i32));
@@ -3512,7 +3512,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfff0007f, // XXX Suspect
         data: 0xc2100053, // XXX Suspect
         name: "FCVT.WU.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
             cpu.write_x(f.rd, i64::from(cpu.read_f64(f.rs1) as u32));
@@ -3524,7 +3524,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfff0007f,
         data: 0xd2000053,
         name: "FCVT.D.W",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
             let s1 = cpu.read_x(f.rs1);
@@ -3537,7 +3537,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfff0007f,
         data: 0xd2100053,
         name: "FCVT.D.WU",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
             let s1 = cpu.read_x(f.rs1);
@@ -3551,7 +3551,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfff0007f, // XXX Suspect
         data: 0xc2200053, // XXX Suspect
         name: "FCVT.L.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
             cpu.write_x(f.rd, cpu.read_f64(f.rs1) as i64);
@@ -3563,7 +3563,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfff0007f,
         data: 0xc2300053,
         name: "FCVT.LU.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
             cpu.write_x(f.rd, cpu.read_f64(f.rs1) as u64 as i64);
@@ -3575,7 +3575,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfff0707f,
         data: 0xe2000053,
         name: "FMV.X.D",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             cpu.check_float_access(0)?;
             let f = parse_format_r(word);
             cpu.write_x(f.rd, cpu.read_f(f.rs1));
@@ -3587,7 +3587,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfff0007f,
         data: 0xd2200053,
         name: "FCVT.D.L",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
             let s1 = cpu.read_x(f.rs1);
@@ -3600,7 +3600,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfff0007f,
         data: 0xd2300053,
         name: "FCVT.D.LU",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
             let s1 = cpu.read_x(f.rs1);
@@ -3613,7 +3613,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfff0707f,
         data: 0xf2000053,
         name: "FMV.D.X",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             cpu.check_float_access(0)?;
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
@@ -3627,7 +3627,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xffffffff,
         data: 0x7b200073,
         name: "DRET",
-        operation: |_cpu, _word, _address| {
+        operation: |_cpu, __address, _word| {
             todo!("Handling dret requires handling all of debug mode")
         },
         disassemble: dump_empty,
@@ -3636,7 +3636,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xffffffff,
         data: 0x30200073,
         name: "MRET",
-        operation: |_address, _word, cpu| {
+        operation: |cpu, _address, _word| {
             cpu.pc = cpu.read_csr(Csr::Mepc as u16)? as i64;
             let status = cpu.read_csr_raw(Csr::Mstatus);
             let mpie = (status >> 7) & 1;
@@ -3664,7 +3664,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xffffffff,
         data: 0x10200073,
         name: "SRET",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             // @TODO: Throw error if higher privilege return instruction is executed
 
             if cpu.privilege_mode == PrivilegeMode::User
@@ -3704,7 +3704,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe007fff,
         data: 0x12000073,
         name: "SFENCE.VMA",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             if cpu.privilege_mode == PrivilegeMode::User
                 || cpu.privilege_mode == PrivilegeMode::Supervisor
                     && cpu.csr[Csr::Mstatus as usize] & MSTATUS_TVM != 0
@@ -3733,7 +3733,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xffffffff,
         data: 0x10500073,
         name: "WFI",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             /*
              * "When TW=1, if WFI is executed in S- mode, and it does
              * not complete within an implementation-specific, bounded
@@ -3760,7 +3760,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x0800003b,
         name: "ADD.UW",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -3773,7 +3773,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x20002033,
         name: "SH1ADD",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -3786,7 +3786,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x2000203b,
         name: "SH1ADD.UW",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -3799,7 +3799,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x20004033,
         name: "SH2ADD",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -3812,7 +3812,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x2000403b,
         name: "SH2ADD.UW",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -3825,7 +3825,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x20006033,
         name: "SH3ADD",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -3838,7 +3838,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x2000603b,
         name: "SH3ADD.UW",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -3851,7 +3851,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x0800101b,
         name: "SLLI.UW",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let mask = 0x3f;
@@ -3866,7 +3866,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x0e005033,
         name: "CZERO.EQZ",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
@@ -3879,7 +3879,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xfe00707f,
         data: 0x0e007033,
         name: "CZERO.NEZ",
-        operation: |_address, word, cpu| {
+        operation: |cpu, _address, word| {
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
