@@ -1282,16 +1282,13 @@ fn dump_format_s(s: &mut String, cpu: &Cpu, _address: i64, word: u32, evaluate: 
 
 struct FormatU {
     rd: usize,
-    imm: u64,
+    imm: i64,
 }
 
 const fn parse_format_u(word: u32) -> FormatU {
     FormatU {
-        rd: ((word >> 7) & 0x1f) as usize, // [11:7]
-        imm: (match word & 0x80000000 {
-            0x80000000 => 0xffffffff00000000,
-            _ => 0,
-        } | ((word as u64) & 0xfffff000)),
+        rd: ((word >> 7) & 31) as usize, // [11:7]
+        imm: (word & 0xfffff000) as i32 as i64,
     }
 }
 
@@ -1339,7 +1336,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "LUI",
         operation: |cpu, _address, word| {
             let f = parse_format_u(word);
-            cpu.write_x(f.rd, f.imm as i64);
+            cpu.write_x(f.rd, f.imm);
             Ok(())
         },
         disassemble: dump_format_u,
