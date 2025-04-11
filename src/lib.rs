@@ -107,7 +107,8 @@ impl Emulator {
             s.clear();
             let wbr = self.cpu.disassemble(&mut s);
             self.tick(1);
-            print!("{:5} {s:72}", self.cpu.cycle);
+            let cycle = self.cpu.cycle;
+            print!("{cycle:5} {s:72}");
             if wbr != 0 {
                 println!("{:16x}", self.cpu.read_register(wbr as u8));
             } else {
