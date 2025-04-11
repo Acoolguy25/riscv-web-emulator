@@ -1483,8 +1483,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "LB",
         operation: |_address, word, cpu| {
             let f = parse_format_i(word);
-            let addr = cpu.read_x(f.rs1);
-            if let Some(v) = cpu.memop(Read, addr, f.imm, 0, 1) {
+            let s1 = cpu.read_x(f.rs1);
+            if let Some(v) = cpu.memop(Read, s1, f.imm, 0, 1) {
                 let v = v as i8 as i64;
                 cpu.write_x(f.rd, v);
             }
@@ -1498,8 +1498,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "LH",
         operation: |_address, word, cpu| {
             let f = parse_format_i(word);
-            let addr = cpu.read_x(f.rs1);
-            if let Some(v) = cpu.memop(Read, addr, f.imm, 0, 2) {
+            let s1 = cpu.read_x(f.rs1);
+            if let Some(v) = cpu.memop(Read, s1, f.imm, 0, 2) {
                 let v = v as i16 as i64;
                 cpu.write_x(f.rd, v);
             }
@@ -1513,8 +1513,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "LW",
         operation: |_address, word, cpu| {
             let f = parse_format_i(word);
-            let addr = cpu.read_x(f.rs1);
-            if let Some(v) = cpu.memop(Read, addr, f.imm, 0, 4) {
+            let s1 = cpu.read_x(f.rs1);
+            if let Some(v) = cpu.memop(Read, s1, f.imm, 0, 4) {
                 cpu.write_x(f.rd, v as i32 as i64);
             }
             Ok(())
@@ -1527,8 +1527,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "LBU",
         operation: |_address, word, cpu| {
             let f = parse_format_i(word);
-            let addr = cpu.read_x(f.rs1);
-            if let Some(v) = cpu.memop(Read, addr, f.imm, 0, 1) {
+            let s1 = cpu.read_x(f.rs1);
+            if let Some(v) = cpu.memop(Read, s1, f.imm, 0, 1) {
                 cpu.write_x(f.rd, v);
             }
             Ok(())
@@ -1541,8 +1541,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "LHU",
         operation: |_address, word, cpu| {
             let f = parse_format_i(word);
-            let addr = cpu.read_x(f.rs1);
-            if let Some(v) = cpu.memop(Read, addr, f.imm, 0, 2) {
+            let s1 = cpu.read_x(f.rs1);
+            if let Some(v) = cpu.memop(Read, s1, f.imm, 0, 2) {
                 cpu.write_x(f.rd, v);
             }
             Ok(())
@@ -1555,9 +1555,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "SB",
         operation: |_address, word, cpu| {
             let f = parse_format_s(word);
-            let addr = cpu.read_x(f.rs1);
-            let value = cpu.read_x(f.rs2);
-            cpu.memop(Write, addr, f.imm, value, 1);
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
+            cpu.memop(Write, s1, f.imm, s2, 1);
             Ok(())
         },
         disassemble: dump_format_s,
@@ -1568,9 +1568,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "SH",
         operation: |_address, word, cpu| {
             let f = parse_format_s(word);
-            let addr = cpu.read_x(f.rs1);
-            let value = cpu.read_x(f.rs2);
-            cpu.memop(Write, addr, f.imm, value, 2);
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
+            cpu.memop(Write, s1, f.imm, s2, 2);
             Ok(())
         },
         disassemble: dump_format_s,
@@ -1581,9 +1581,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "SW",
         operation: |_address, word, cpu| {
             let f = parse_format_s(word);
-            let addr = cpu.read_x(f.rs1);
-            let value = cpu.read_x(f.rs2);
-            cpu.memop(Write, addr, f.imm, value, 4);
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
+            cpu.memop(Write, s1, f.imm, s2, 4);
             Ok(())
         },
         disassemble: dump_format_s,
@@ -1594,8 +1594,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "ADDI",
         operation: |_address, word, cpu| {
             let f = parse_format_i(word);
-            let value = cpu.read_x(f.rs1);
-            cpu.write_x(f.rd, value.wrapping_add(f.imm));
+            let s1 = cpu.read_x(f.rs1);
+            cpu.write_x(f.rd, s1.wrapping_add(f.imm));
             Ok(())
         },
         disassemble: dump_format_i,
@@ -1606,8 +1606,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "SLTI",
         operation: |_address, word, cpu| {
             let f = parse_format_i(word);
-            let value = cpu.read_x(f.rs1);
-            cpu.write_x(f.rd, i64::from(value < f.imm));
+            let s1 = cpu.read_x(f.rs1);
+            cpu.write_x(f.rd, i64::from(s1 < f.imm));
             Ok(())
         },
         disassemble: dump_format_i,
@@ -1618,8 +1618,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "SLTIU",
         operation: |_address, word, cpu| {
             let f = parse_format_i(word);
-            let value = cpu.read_x(f.rs1);
-            cpu.write_x(f.rd, i64::from((value as u64) < (f.imm as u64)));
+            let s1 = cpu.read_x(f.rs1);
+            cpu.write_x(f.rd, i64::from((s1 as u64) < (f.imm as u64)));
             Ok(())
         },
         disassemble: dump_format_i,
@@ -1630,8 +1630,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "XORI",
         operation: |_address, word, cpu| {
             let f = parse_format_i(word);
-            let value = cpu.read_x(f.rs1);
-            cpu.write_x(f.rd, value ^ f.imm);
+            let s1 = cpu.read_x(f.rs1);
+            cpu.write_x(f.rd, s1 ^ f.imm);
             Ok(())
         },
         disassemble: dump_format_i,
@@ -1642,8 +1642,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "ORI",
         operation: |_address, word, cpu| {
             let f = parse_format_i(word);
-            let value = cpu.read_x(f.rs1);
-            cpu.write_x(f.rd, value | f.imm);
+            let s1 = cpu.read_x(f.rs1);
+            cpu.write_x(f.rd, s1 | f.imm);
             Ok(())
         },
         disassemble: dump_format_i,
@@ -1654,8 +1654,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "ANDI",
         operation: |_address, word, cpu| {
             let f = parse_format_i(word);
-            let value = cpu.read_x(f.rs1);
-            cpu.write_x(f.rd, value & f.imm);
+            let s1 = cpu.read_x(f.rs1);
+            cpu.write_x(f.rd, s1 & f.imm);
             Ok(())
         },
         disassemble: dump_format_i,
@@ -1669,9 +1669,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "ADD",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1);
-            let value2 = cpu.read_x(f.rs2);
-            cpu.write_x(f.rd, value1.wrapping_add(value2));
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
+            cpu.write_x(f.rd, s1.wrapping_add(s2));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -1682,9 +1682,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "SUB",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1);
-            let value = cpu.read_x(f.rs2);
-            cpu.write_x(f.rd, value1.wrapping_sub(value));
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
+            cpu.write_x(f.rd, s1.wrapping_sub(s2));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -1695,9 +1695,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "SLL",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1);
-            let value2 = cpu.read_x(f.rs2);
-            cpu.write_x(f.rd, value1.wrapping_shl(value2 as u32));
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
+            cpu.write_x(f.rd, s1.wrapping_shl(s2 as u32));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -1708,9 +1708,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "SLT",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1);
-            let value2 = cpu.read_x(f.rs2);
-            cpu.write_x(f.rd, i64::from(value1 < value2));
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
+            cpu.write_x(f.rd, i64::from(s1 < s2));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -1721,9 +1721,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "SLTU",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1) as u64;
-            let value2 = cpu.read_x(f.rs2) as u64;
-            cpu.write_x(f.rd, i64::from(value1 < value2));
+            let s1 = cpu.read_x(f.rs1) as u64;
+            let s2 = cpu.read_x(f.rs2) as u64;
+            cpu.write_x(f.rd, i64::from(s1 < s2));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -1734,9 +1734,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "XOR",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1);
-            let value2 = cpu.read_x(f.rs2);
-            cpu.write_x(f.rd, value1 ^ value2);
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
+            cpu.write_x(f.rd, s1 ^ s2);
             Ok(())
         },
         disassemble: dump_format_r,
@@ -1747,9 +1747,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "SRL",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1) as u64;
-            let value2 = cpu.read_x(f.rs2) as u32;
-            cpu.write_x(f.rd, value1.wrapping_shr(value2) as i64);
+            let s1 = cpu.read_x(f.rs1) as u64;
+            let s2 = cpu.read_x(f.rs2) as u32;
+            cpu.write_x(f.rd, s1.wrapping_shr(s2) as i64);
             Ok(())
         },
         disassemble: dump_format_r,
@@ -1760,9 +1760,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "SRA",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1);
-            let value2 = cpu.read_x(f.rs2);
-            cpu.write_x(f.rd, value1.wrapping_shr(value2 as u32));
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
+            cpu.write_x(f.rd, s1.wrapping_shr(s2 as u32));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -1773,9 +1773,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "OR",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1);
-            let value2 = cpu.read_x(f.rs2);
-            cpu.write_x(f.rd, value1 | value2);
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
+            cpu.write_x(f.rd, s1 | s2);
             Ok(())
         },
         disassemble: dump_format_r,
@@ -1786,9 +1786,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "AND",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1);
-            let value2 = cpu.read_x(f.rs2);
-            cpu.write_x(f.rd, value1 & value2);
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
+            cpu.write_x(f.rd, s1 & s2);
             Ok(())
         },
         disassemble: dump_format_r,
@@ -1858,8 +1858,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "LWU",
         operation: |_address, word, cpu| {
             let f = parse_format_i(word);
-            let value = cpu.read_x(f.rs1);
-            if let Some(v) = cpu.memop(Read, value, f.imm, 0, 4) {
+            let s1 = cpu.read_x(f.rs1);
+            if let Some(v) = cpu.memop(Read, s1, f.imm, 0, 4) {
                 cpu.write_x(f.rd, v);
             }
             Ok(())
@@ -1872,8 +1872,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "LD",
         operation: |_address, word, cpu| {
             let f = parse_format_i(word);
-            let value = cpu.read_x(f.rs1);
-            if let Some(v) = cpu.memop(Read, value, f.imm, 0, 8) {
+            let s1 = cpu.read_x(f.rs1);
+            if let Some(v) = cpu.memop(Read, s1, f.imm, 0, 8) {
                 cpu.write_x(f.rd, v);
             }
             Ok(())
@@ -1886,9 +1886,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "SD",
         operation: |_address, word, cpu| {
             let f = parse_format_s(word);
-            let value1 = cpu.read_x(f.rs1);
-            let value2 = cpu.read_x(f.rs2);
-            cpu.memop(Write, value1, f.imm, value2, 8);
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
+            cpu.memop(Write, s1, f.imm, s2, 8);
             Ok(())
         },
         disassemble: dump_format_s,
@@ -1901,8 +1901,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             let f = parse_format_r(word);
             let mask = 0x3f;
             let shamt = (word >> 20) & mask;
-            let value = cpu.read_x(f.rs1);
-            cpu.write_x(f.rd, value << shamt);
+            let s1 = cpu.read_x(f.rs1);
+            cpu.write_x(f.rd, s1 << shamt);
             Ok(())
         },
         disassemble: dump_format_r,
@@ -1915,8 +1915,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             let f = parse_format_r(word);
             let mask = 0x3f;
             let shamt = (word >> 20) & mask;
-            let value = cpu.read_x(f.rs1);
-            cpu.write_x(f.rd, ((value as u64) >> shamt) as i64);
+            let s1 = cpu.read_x(f.rs1);
+            cpu.write_x(f.rd, ((s1 as u64) >> shamt) as i64);
             Ok(())
         },
         disassemble: dump_format_r,
@@ -1929,8 +1929,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             let f = parse_format_r(word);
             let mask = 0x3f;
             let shamt = (word >> 20) & mask;
-            let value = cpu.read_x(f.rs1);
-            cpu.write_x(f.rd, value >> shamt);
+            let s1 = cpu.read_x(f.rs1);
+            cpu.write_x(f.rd, s1 >> shamt);
             Ok(())
         },
         disassemble: dump_format_r,
@@ -1941,8 +1941,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "ADDIW",
         operation: |_address, word, cpu| {
             let f = parse_format_i(word);
-            let value = cpu.read_x(f.rs1);
-            cpu.write_x(f.rd, i64::from(value.wrapping_add(f.imm) as i32));
+            let s1 = cpu.read_x(f.rs1);
+            cpu.write_x(f.rd, i64::from(s1.wrapping_add(f.imm) as i32));
             Ok(())
         },
         disassemble: dump_format_i,
@@ -1954,8 +1954,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
             let shamt = f.rs2 as u32;
-            let value = cpu.read_x(f.rs1);
-            cpu.write_x(f.rd, i64::from((value << shamt) as i32));
+            let s1 = cpu.read_x(f.rs1);
+            cpu.write_x(f.rd, i64::from((s1 << shamt) as i32));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -1968,8 +1968,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             let f = parse_format_r(word);
             let mask = 0x3f;
             let shamt = (word >> 20) & mask;
-            let value = cpu.read_x(f.rs1);
-            cpu.write_x(f.rd, i64::from(((value as u32) >> shamt) as i32));
+            let s1 = cpu.read_x(f.rs1);
+            cpu.write_x(f.rd, i64::from(((s1 as u32) >> shamt) as i32));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -1981,8 +1981,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
             let shamt = (word >> 20) & 0x1f;
-            let value = cpu.read_x(f.rs1);
-            cpu.write_x(f.rd, i64::from((value as i32) >> shamt));
+            let s1 = cpu.read_x(f.rs1);
+            cpu.write_x(f.rd, i64::from((s1 as i32) >> shamt));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -1993,9 +1993,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "ADDW",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1);
-            let value2 = cpu.read_x(f.rs2);
-            cpu.write_x(f.rd, i64::from(value1.wrapping_add(value2) as i32));
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
+            cpu.write_x(f.rd, i64::from(s1.wrapping_add(s2) as i32));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -2006,9 +2006,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "SUBW",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1);
-            let value2 = cpu.read_x(f.rs2);
-            cpu.write_x(f.rd, i64::from(value1.wrapping_sub(value2) as i32));
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
+            cpu.write_x(f.rd, i64::from(s1.wrapping_sub(s2) as i32));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -2019,12 +2019,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "SLLW",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1);
-            let value2 = cpu.read_x(f.rs2);
-            cpu.write_x(
-                f.rd,
-                i64::from((value1 as u32).wrapping_shl(value2 as u32) as i32),
-            );
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
+            cpu.write_x(f.rd, i64::from((s1 as u32).wrapping_shl(s2 as u32) as i32));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -2035,12 +2032,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "SRLW",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1);
-            let value2 = cpu.read_x(f.rs2);
-            cpu.write_x(
-                f.rd,
-                i64::from((value1 as u32).wrapping_shr(value2 as u32) as i32),
-            );
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
+            cpu.write_x(f.rd, i64::from((s1 as u32).wrapping_shr(s2 as u32) as i32));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -2051,9 +2045,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "SRAW",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1);
-            let value2 = cpu.read_x(f.rs2);
-            cpu.write_x(f.rd, i64::from((value1 as i32).wrapping_shr(value2 as u32)));
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
+            cpu.write_x(f.rd, i64::from((s1 as i32).wrapping_shr(s2 as u32)));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -2179,9 +2173,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "MUL",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1);
-            let value2 = cpu.read_x(f.rs2);
-            cpu.write_x(f.rd, value1.wrapping_mul(value2));
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
+            cpu.write_x(f.rd, s1.wrapping_mul(s2));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -2192,12 +2186,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "MULH",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1);
-            let value2 = cpu.read_x(f.rs2);
-            cpu.write_x(
-                f.rd,
-                ((i128::from(value1) * i128::from(value2)) >> 64) as i64,
-            );
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
+            cpu.write_x(f.rd, ((i128::from(s1) * i128::from(s2)) >> 64) as i64);
             Ok(())
         },
         disassemble: dump_format_r,
@@ -2208,11 +2199,11 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "MULHSU",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1);
-            let value2 = cpu.read_x(f.rs2);
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
             cpu.write_x(
                 f.rd,
-                ((value1 as u128).wrapping_mul(u128::from(value2 as u64)) >> 64) as i64,
+                ((s1 as u128).wrapping_mul(u128::from(s2 as u64)) >> 64) as i64,
             );
             Ok(())
         },
@@ -2224,9 +2215,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "MULHU",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = u128::from(cpu.read_x(f.rs1) as u64);
-            let value2 = u128::from(cpu.read_x(f.rs2) as u64);
-            cpu.write_x(f.rd, (value1.wrapping_mul(value2) >> 64) as i64);
+            let s1 = u128::from(cpu.read_x(f.rs1) as u64);
+            let s2 = u128::from(cpu.read_x(f.rs2) as u64);
+            cpu.write_x(f.rd, (s1.wrapping_mul(s2) >> 64) as i64);
             Ok(())
         },
         disassemble: dump_format_r,
@@ -2273,14 +2264,14 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "REM",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1);
-            let value2 = cpu.read_x(f.rs2);
-            if value2 == 0 {
-                cpu.write_x(f.rd, value1);
-            } else if value1 == i64::MIN && value2 == -1 {
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
+            if s2 == 0 {
+                cpu.write_x(f.rd, s1);
+            } else if s1 == i64::MIN && s2 == -1 {
                 cpu.write_x(f.rd, 0);
             } else {
-                cpu.write_x(f.rd, value1.wrapping_rem(value2));
+                cpu.write_x(f.rd, s1.wrapping_rem(s2));
             }
             Ok(())
         },
@@ -2292,13 +2283,13 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "REMU",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1) as u64;
-            let value2 = cpu.read_x(f.rs2) as u64;
+            let s1 = cpu.read_x(f.rs1) as u64;
+            let s2 = cpu.read_x(f.rs2) as u64;
             cpu.write_x(
                 f.rd,
-                match value2 {
-                    0 => value1 as i64,
-                    _ => value1.wrapping_rem(value2) as i64,
+                match s2 {
+                    0 => s1 as i64,
+                    _ => s1.wrapping_rem(s2) as i64,
                 },
             );
             Ok(())
@@ -2312,9 +2303,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "MULW",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1);
-            let value2 = cpu.read_x(f.rs2);
-            cpu.write_x(f.rd, i64::from((value1 as i32).wrapping_mul(value2 as i32)));
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
+            cpu.write_x(f.rd, i64::from((s1 as i32).wrapping_mul(s2 as i32)));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -2325,14 +2316,14 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "DIVW",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1) as i32;
-            let value2 = cpu.read_x(f.rs2) as i32;
-            if value2 == 0 {
+            let s1 = cpu.read_x(f.rs1) as i32;
+            let s2 = cpu.read_x(f.rs2) as i32;
+            if s2 == 0 {
                 cpu.write_x(f.rd, -1);
-            } else if value1 == i32::MIN && value2 == -1 {
-                cpu.write_x(f.rd, i64::from(value1 as i32));
+            } else if s1 == i32::MIN && s2 == -1 {
+                cpu.write_x(f.rd, i64::from(s1 as i32));
             } else {
-                cpu.write_x(f.rd, i64::from(value1.wrapping_div(value2) as i32));
+                cpu.write_x(f.rd, i64::from(s1.wrapping_div(s2) as i32));
             }
             Ok(())
         },
@@ -2344,12 +2335,12 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "DIVUW",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1) as u32;
-            let value2 = cpu.read_x(f.rs2) as u32;
-            if value2 == 0 {
+            let s1 = cpu.read_x(f.rs1) as u32;
+            let s2 = cpu.read_x(f.rs2) as u32;
+            if s2 == 0 {
                 cpu.write_x(f.rd, -1);
             } else {
-                cpu.write_x(f.rd, i64::from(value1.wrapping_div(value2) as i32));
+                cpu.write_x(f.rd, i64::from(s1.wrapping_div(s2) as i32));
             }
             Ok(())
         },
@@ -2361,14 +2352,14 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "REMW",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1) as i32;
-            let value2 = cpu.read_x(f.rs2) as i32;
-            if value2 == 0 {
-                cpu.write_x(f.rd, i64::from(value1));
-            } else if value1 == i32::MIN && value2 == -1 {
+            let s1 = cpu.read_x(f.rs1) as i32;
+            let s2 = cpu.read_x(f.rs2) as i32;
+            if s2 == 0 {
+                cpu.write_x(f.rd, i64::from(s1));
+            } else if s1 == i32::MIN && s2 == -1 {
                 cpu.write_x(f.rd, 0);
             } else {
-                cpu.write_x(f.rd, i64::from(value1.wrapping_rem(value2)));
+                cpu.write_x(f.rd, i64::from(s1.wrapping_rem(s2)));
             }
             Ok(())
         },
@@ -2380,13 +2371,13 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "REMUW",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1) as u32;
-            let value2 = cpu.read_x(f.rs2) as u32;
+            let s1 = cpu.read_x(f.rs1) as u32;
+            let s2 = cpu.read_x(f.rs2) as u32;
             cpu.write_x(
                 f.rd,
-                match value2 {
-                    0 => i64::from(value1 as i32),
-                    _ => i64::from(value1.wrapping_rem(value2) as i32),
+                match s2 {
+                    0 => i64::from(s1 as i32),
+                    _ => i64::from(s1.wrapping_rem(s2) as i32),
                 },
             );
             Ok(())
@@ -2419,12 +2410,12 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
             let va = cpu.read_x(f.rs1);
-            let value2 = cpu.read_x(f.rs2);
+            let s2 = cpu.read_x(f.rs2);
             let pa = cpu
                 .mmu
                 .translate_address(va as u64, MemoryAccessType::Read, false)?;
             if cpu.reservation == Some(pa) {
-                cpu.mmu.store_virt_u32(va as u64, value2 as u32)?;
+                cpu.mmu.store_virt_u32(va as u64, s2 as u32)?;
                 cpu.write_x(f.rd, 0);
             } else {
                 cpu.write_x(f.rd, 1);
@@ -2440,10 +2431,10 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "AMOSWAP.W",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1) as u64;
-            let value2 = cpu.read_x(f.rs2) as u32;
-            let tmp = i64::from(cpu.mmu.load_virt_u32(value1)? as i32);
-            cpu.mmu.store_virt_u32(value1, value2)?;
+            let s1 = cpu.read_x(f.rs1) as u64;
+            let s2 = cpu.read_x(f.rs2) as u32;
+            let tmp = i64::from(cpu.mmu.load_virt_u32(s1)? as i32);
+            cpu.mmu.store_virt_u32(s1, s2)?;
             cpu.write_x(f.rd, tmp);
             Ok(())
         },
@@ -2455,10 +2446,10 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "AMOADD.W",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1) as u64;
-            let value2 = cpu.read_x(f.rs2) as u32;
-            let tmp = cpu.mmu.load_virt_u32(value1)?;
-            cpu.mmu.store_virt_u32(value1, tmp.wrapping_add(value2))?;
+            let s1 = cpu.read_x(f.rs1) as u64;
+            let s2 = cpu.read_x(f.rs2) as u32;
+            let tmp = cpu.mmu.load_virt_u32(s1)?;
+            cpu.mmu.store_virt_u32(s1, tmp.wrapping_add(s2))?;
             cpu.write_x(f.rd, i64::from(tmp as i32));
             Ok(())
         },
@@ -2470,10 +2461,10 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "AMOXOR.W",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1) as u64;
-            let value2 = cpu.read_x(f.rs2) as u32;
-            let tmp = cpu.mmu.load_virt_u32(value1)?;
-            cpu.mmu.store_virt_u32(value1, value2 ^ tmp)?;
+            let s1 = cpu.read_x(f.rs1) as u64;
+            let s2 = cpu.read_x(f.rs2) as u32;
+            let tmp = cpu.mmu.load_virt_u32(s1)?;
+            cpu.mmu.store_virt_u32(s1, s2 ^ tmp)?;
             cpu.write_x(f.rd, i64::from(tmp as i32));
             Ok(())
         },
@@ -2485,10 +2476,10 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "AMOAND.W",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1) as u64;
-            let value2 = cpu.read_x(f.rs2);
-            let tmp = i64::from(cpu.mmu.load_virt_u32(value1)? as i32);
-            cpu.mmu.store_virt_u32(value1, (value2 & tmp) as u32)?;
+            let s1 = cpu.read_x(f.rs1) as u64;
+            let s2 = cpu.read_x(f.rs2);
+            let tmp = i64::from(cpu.mmu.load_virt_u32(s1)? as i32);
+            cpu.mmu.store_virt_u32(s1, (s2 & tmp) as u32)?;
             cpu.write_x(f.rd, tmp);
             Ok(())
         },
@@ -2500,10 +2491,10 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "AMOOR.W",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1) as u64;
-            let value2 = cpu.read_x(f.rs2);
-            let tmp = i64::from(cpu.mmu.load_virt_u32(value1)? as i32);
-            cpu.mmu.store_virt_u32(value1, (value2 | tmp) as u32)?;
+            let s1 = cpu.read_x(f.rs1) as u64;
+            let s2 = cpu.read_x(f.rs2);
+            let tmp = i64::from(cpu.mmu.load_virt_u32(s1)? as i32);
+            cpu.mmu.store_virt_u32(s1, (s2 | tmp) as u32)?;
             cpu.write_x(f.rd, tmp);
             Ok(())
         },
@@ -2515,11 +2506,11 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "AMOMIN.W",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1) as u64;
-            let value2 = cpu.read_x(f.rs2) as i32;
-            let tmp = cpu.mmu.load_virt_u32(value1)? as i32;
-            let min = if value2 < tmp { value2 } else { tmp };
-            cpu.mmu.store_virt_u32(value1, min as u32)?;
+            let s1 = cpu.read_x(f.rs1) as u64;
+            let s2 = cpu.read_x(f.rs2) as i32;
+            let tmp = cpu.mmu.load_virt_u32(s1)? as i32;
+            let min = if s2 < tmp { s2 } else { tmp };
+            cpu.mmu.store_virt_u32(s1, min as u32)?;
             cpu.write_x(f.rd, i64::from(tmp));
             Ok(())
         },
@@ -2531,11 +2522,11 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "AMOMAX.W",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1) as u64;
-            let value2 = cpu.read_x(f.rs2) as i32;
-            let tmp = cpu.mmu.load_virt_u32(value1)? as i32;
-            let max = if value2 >= tmp { value2 } else { tmp };
-            cpu.mmu.store_virt_u32(value1, max as u32)?;
+            let s1 = cpu.read_x(f.rs1) as u64;
+            let s2 = cpu.read_x(f.rs2) as i32;
+            let tmp = cpu.mmu.load_virt_u32(s1)? as i32;
+            let max = if s2 >= tmp { s2 } else { tmp };
+            cpu.mmu.store_virt_u32(s1, max as u32)?;
             cpu.write_x(f.rd, i64::from(tmp));
             Ok(())
         },
@@ -2547,11 +2538,11 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "AMOMINU.W",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1) as u64;
-            let value2 = cpu.read_x(f.rs2) as u32;
-            let tmp = cpu.mmu.load_virt_u32(value1)?;
-            let min = if value2 <= tmp { value2 } else { tmp };
-            cpu.mmu.store_virt_u32(value1, min)?;
+            let s1 = cpu.read_x(f.rs1) as u64;
+            let s2 = cpu.read_x(f.rs2) as u32;
+            let tmp = cpu.mmu.load_virt_u32(s1)?;
+            let min = if s2 <= tmp { s2 } else { tmp };
+            cpu.mmu.store_virt_u32(s1, min)?;
             cpu.write_x(f.rd, i64::from(tmp as i32));
             Ok(())
         },
@@ -2563,11 +2554,11 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "AMOMAXU.W",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1) as u64;
-            let value2 = cpu.read_x(f.rs2) as u32;
-            let tmp = cpu.mmu.load_virt_u32(value1)?;
-            let max = if value2 >= tmp { value2 } else { tmp };
-            cpu.mmu.store_virt_u32(value1, max)?;
+            let s1 = cpu.read_x(f.rs1) as u64;
+            let s2 = cpu.read_x(f.rs2) as u32;
+            let tmp = cpu.mmu.load_virt_u32(s1)?;
+            let max = if s2 >= tmp { s2 } else { tmp };
+            cpu.mmu.store_virt_u32(s1, max)?;
             cpu.write_x(f.rd, i64::from(tmp as i32));
             Ok(())
         },
@@ -2598,12 +2589,12 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
             let va = cpu.read_x(f.rs1);
-            let value2 = cpu.read_x(f.rs2);
+            let s2 = cpu.read_x(f.rs2);
             let pa = cpu
                 .mmu
                 .translate_address(va as u64, MemoryAccessType::Read, false)?;
             if cpu.reservation == Some(pa) {
-                cpu.mmu.store_virt_u64(va as u64, value2 as u64)?;
+                cpu.mmu.store_virt_u64(va as u64, s2 as u64)?;
                 cpu.write_x(f.rd, 0);
             } else {
                 cpu.write_x(f.rd, 1);
@@ -2619,10 +2610,10 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "AMOSWAP.D",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1) as u64;
-            let value2 = cpu.read_x(f.rs2) as u64;
-            let tmp = cpu.mmu.load_virt_u64(value1)? as i64;
-            cpu.mmu.store_virt_u64(value1, value2)?;
+            let s1 = cpu.read_x(f.rs1) as u64;
+            let s2 = cpu.read_x(f.rs2) as u64;
+            let tmp = cpu.mmu.load_virt_u64(s1)? as i64;
+            cpu.mmu.store_virt_u64(s1, s2)?;
             cpu.write_x(f.rd, tmp);
             Ok(())
         },
@@ -2634,10 +2625,10 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "AMOADD.D",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1) as u64;
-            let value2 = cpu.read_x(f.rs2) as u64;
-            let tmp = cpu.mmu.load_virt_u64(value1)?;
-            cpu.mmu.store_virt_u64(value1, tmp.wrapping_add(value2))?;
+            let s1 = cpu.read_x(f.rs1) as u64;
+            let s2 = cpu.read_x(f.rs2) as u64;
+            let tmp = cpu.mmu.load_virt_u64(s1)?;
+            cpu.mmu.store_virt_u64(s1, tmp.wrapping_add(s2))?;
             cpu.write_x(f.rd, tmp as i64);
             Ok(())
         },
@@ -2649,10 +2640,10 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "AMOXOR.D",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1) as u64;
-            let value2 = cpu.read_x(f.rs2) as u64;
-            let tmp = cpu.mmu.load_virt_u64(value1)?;
-            cpu.mmu.store_virt_u64(value1, tmp ^ value2)?;
+            let s1 = cpu.read_x(f.rs1) as u64;
+            let s2 = cpu.read_x(f.rs2) as u64;
+            let tmp = cpu.mmu.load_virt_u64(s1)?;
+            cpu.mmu.store_virt_u64(s1, tmp ^ s2)?;
             cpu.write_x(f.rd, tmp as i64);
             Ok(())
         },
@@ -2664,10 +2655,10 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "AMOAND.D",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1) as u64;
-            let value2 = cpu.read_x(f.rs2) as u64;
-            let tmp = cpu.mmu.load_virt_u64(value1)?;
-            cpu.mmu.store_virt_u64(value1, tmp & value2)?;
+            let s1 = cpu.read_x(f.rs1) as u64;
+            let s2 = cpu.read_x(f.rs2) as u64;
+            let tmp = cpu.mmu.load_virt_u64(s1)?;
+            cpu.mmu.store_virt_u64(s1, tmp & s2)?;
             cpu.write_x(f.rd, tmp as i64);
             Ok(())
         },
@@ -2679,10 +2670,10 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "AMOOR.D",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1) as u64;
-            let value2 = cpu.read_x(f.rs2) as u64;
-            let tmp = cpu.mmu.load_virt_u64(value1)?;
-            cpu.mmu.store_virt_u64(value1, tmp | value2)?;
+            let s1 = cpu.read_x(f.rs1) as u64;
+            let s2 = cpu.read_x(f.rs2) as u64;
+            let tmp = cpu.mmu.load_virt_u64(s1)?;
+            cpu.mmu.store_virt_u64(s1, tmp | s2)?;
             cpu.write_x(f.rd, tmp as i64);
             Ok(())
         },
@@ -2694,11 +2685,11 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "AMOMIN.D",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1) as u64;
-            let value2 = cpu.read_x(f.rs2);
-            let tmp = cpu.mmu.load_virt_u64(value1)? as i64;
-            let min = if value2 < tmp { value2 } else { tmp };
-            cpu.mmu.store_virt_u64(value1, min as u64)?;
+            let s1 = cpu.read_x(f.rs1) as u64;
+            let s2 = cpu.read_x(f.rs2);
+            let tmp = cpu.mmu.load_virt_u64(s1)? as i64;
+            let min = if s2 < tmp { s2 } else { tmp };
+            cpu.mmu.store_virt_u64(s1, min as u64)?;
             cpu.write_x(f.rd, tmp);
             Ok(())
         },
@@ -2710,11 +2701,11 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "AMOMAX.D",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1) as u64;
-            let value2 = cpu.read_x(f.rs2);
-            let tmp = cpu.mmu.load_virt_u64(value1)? as i64;
-            let max = if value2 >= tmp { value2 } else { tmp };
-            cpu.mmu.store_virt_u64(value1, max as u64)?;
+            let s1 = cpu.read_x(f.rs1) as u64;
+            let s2 = cpu.read_x(f.rs2);
+            let tmp = cpu.mmu.load_virt_u64(s1)? as i64;
+            let max = if s2 >= tmp { s2 } else { tmp };
+            cpu.mmu.store_virt_u64(s1, max as u64)?;
             cpu.write_x(f.rd, tmp);
             Ok(())
         },
@@ -2726,11 +2717,11 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "AMOMINU.D",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1) as u64;
-            let value2 = cpu.read_x(f.rs2) as u64;
-            let tmp = cpu.mmu.load_virt_u64(value1)?;
-            let min = if value2 <= tmp { value2 } else { tmp };
-            cpu.mmu.store_virt_u64(value1, min)?;
+            let s1 = cpu.read_x(f.rs1) as u64;
+            let s2 = cpu.read_x(f.rs2) as u64;
+            let tmp = cpu.mmu.load_virt_u64(s1)?;
+            let min = if s2 <= tmp { s2 } else { tmp };
+            cpu.mmu.store_virt_u64(s1, min)?;
             cpu.write_x(f.rd, tmp as i64);
             Ok(())
         },
@@ -2742,11 +2733,11 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "AMOMAXU.D",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1) as u64;
-            let value2 = cpu.read_x(f.rs2) as u64;
-            let tmp = cpu.mmu.load_virt_u64(value1)?;
-            let max = if value2 >= tmp { value2 } else { tmp };
-            cpu.mmu.store_virt_u64(value1, max)?;
+            let s1 = cpu.read_x(f.rs1) as u64;
+            let s2 = cpu.read_x(f.rs2) as u64;
+            let tmp = cpu.mmu.load_virt_u64(s1)?;
+            let max = if s2 >= tmp { s2 } else { tmp };
+            cpu.mmu.store_virt_u64(s1, max)?;
             cpu.write_x(f.rd, tmp as i64);
             Ok(())
         },
@@ -2760,8 +2751,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |_address, word, cpu| {
             let f = parse_format_i(word);
             cpu.check_float_access(0)?;
-            let value1 = cpu.read_x(f.rs1);
-            if let Some(v) = cpu.memop(Read, value1, f.imm, 0, 4) {
+            let s1 = cpu.read_x(f.rs1);
+            if let Some(v) = cpu.memop(Read, s1, f.imm, 0, 4) {
                 cpu.write_f(f.rd, v | fp::NAN_BOX_F32);
             }
             Ok(())
@@ -2775,9 +2766,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |_address, word, cpu| {
             cpu.check_float_access(0)?;
             let f = parse_format_s(word);
-            let value1 = cpu.read_x(f.rs1);
-            let value2 = cpu.read_f(f.rs2);
-            cpu.mmu.store_virt_u32_(value1.wrapping_add(f.imm), value2)
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_f(f.rs2);
+            cpu.mmu.store_virt_u32_(s1.wrapping_add(f.imm), s2)
         },
         disassemble: dump_format_s,
     },
@@ -2789,10 +2780,10 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             let f = parse_format_r2(word);
             cpu.check_float_access(f.rm)?;
             // XXX Update fflags
-            let value1 = cpu.read_f32(f.rs1);
-            let value2 = cpu.read_f32(f.rs2);
+            let s1 = cpu.read_f32(f.rs1);
+            let s2 = cpu.read_f32(f.rs2);
             let value3 = cpu.read_f32(f.rs3);
-            cpu.write_f32(f.rd, value1.mul_add(value2, value3));
+            cpu.write_f32(f.rd, s1.mul_add(s2, value3));
             Ok(())
         },
         disassemble: dump_format_r2,
@@ -2893,17 +2884,17 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             cpu.check_float_access(f.funct3)?;
             //let rm = cpu.get_rm(word);
 
-            let value1 = cpu.read_f32(f.rs1);
-            let value2 = cpu.read_f32(f.rs2);
+            let s1 = cpu.read_f32(f.rs1);
+            let s2 = cpu.read_f32(f.rs2);
             // Is this implementation correct?
-            let r = if value2 == 0.0 {
+            let r = if s2 == 0.0 {
                 cpu.set_fcsr_dz();
                 f32::INFINITY
-            } else if value2 == -0.0 {
+            } else if s2 == -0.0 {
                 cpu.set_fcsr_dz();
                 f32::NEG_INFINITY
             } else {
-                value1 / value2
+                s1 / s2
             };
 
             cpu.write_f32(f.rd, r);
@@ -3121,8 +3112,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
-            let value = cpu.read_x(f.rs1);
-            cpu.write_f(f.rd, fp::NAN_BOX_F32 | value);
+            let s1 = cpu.read_x(f.rs1);
+            cpu.write_f(f.rd, fp::NAN_BOX_F32 | s1);
             Ok(())
         },
         disassemble: dump_format_r_f,
@@ -3190,8 +3181,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |_address, word, cpu| {
             let f = parse_format_i(word);
             cpu.check_float_access(0)?;
-            let value = cpu.read_x(f.rs1);
-            if let Some(v) = cpu.memop(Read, value, f.imm, 0, 8) {
+            let s1 = cpu.read_x(f.rs1);
+            if let Some(v) = cpu.memop(Read, s1, f.imm, 0, 8) {
                 cpu.write_f(f.rd, v);
             }
             Ok(())
@@ -3205,9 +3196,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |_address, word, cpu| {
             cpu.check_float_access(0)?;
             let f = parse_format_s(word);
-            let value1 = cpu.read_x(f.rs1);
-            let value2 = cpu.read_f(f.rs2);
-            cpu.mmu.store64(value1.wrapping_add(f.imm), value2)
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_f(f.rs2);
+            cpu.mmu.store64(s1.wrapping_add(f.imm), s2)
         },
         disassemble: dump_format_s,
     },
@@ -3322,17 +3313,17 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
-            let value1 = cpu.read_f64(f.rs1);
-            let value2 = cpu.read_f64(f.rs2);
+            let s1 = cpu.read_f64(f.rs1);
+            let s2 = cpu.read_f64(f.rs2);
             // Is this implementation correct?
-            let r = if value2 == 0.0 {
+            let r = if s2 == 0.0 {
                 cpu.set_fcsr_dz();
                 f64::INFINITY
-            } else if value2 == -0.0 {
+            } else if s2 == -0.0 {
                 cpu.set_fcsr_dz();
                 f64::NEG_INFINITY
             } else {
-                value1 / value2
+                s1 / s2
             };
             cpu.write_f64(f.rd, r);
             Ok(())
@@ -3536,8 +3527,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
-            let value = cpu.read_x(f.rs1);
-            cpu.write_f64(f.rd, f64::from(value as i32));
+            let s1 = cpu.read_x(f.rs1);
+            cpu.write_f64(f.rd, f64::from(s1 as i32));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -3549,8 +3540,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
-            let value = cpu.read_x(f.rs1);
-            cpu.write_f64(f.rd, f64::from(value as u32));
+            let s1 = cpu.read_x(f.rs1);
+            cpu.write_f64(f.rd, f64::from(s1 as u32));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -3599,8 +3590,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
-            let value = cpu.read_x(f.rs1);
-            cpu.write_f64(f.rd, value as f64);
+            let s1 = cpu.read_x(f.rs1);
+            cpu.write_f64(f.rd, s1 as f64);
             Ok(())
         },
         disassemble: dump_format_r,
@@ -3612,8 +3603,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
             cpu.check_float_access(f.funct3)?;
-            let value = cpu.read_x(f.rs1);
-            cpu.write_f64(f.rd, value as u64 as f64);
+            let s1 = cpu.read_x(f.rs1);
+            cpu.write_f64(f.rd, s1 as u64 as f64);
             Ok(())
         },
         disassemble: dump_format_r,
@@ -3625,8 +3616,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |_address, word, cpu| {
             cpu.check_float_access(0)?;
             let f = parse_format_r(word);
-            let value = cpu.read_x(f.rs1);
-            cpu.write_f(f.rd, value);
+            let s1 = cpu.read_x(f.rs1);
+            cpu.write_f(f.rd, s1);
             Ok(())
         },
         disassemble: dump_format_r,
@@ -3771,9 +3762,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "ADD.UW",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1);
-            let value2 = cpu.read_x(f.rs2);
-            cpu.write_x(f.rd, value1.wrapping_add(value2 & 0xffffffff));
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
+            cpu.write_x(f.rd, s1.wrapping_add(s2 & 0xffffffff));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -3784,9 +3775,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "SH1ADD",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1);
-            let value2 = cpu.read_x(f.rs2);
-            cpu.write_x(f.rd, value1.wrapping_add(value2 << 1));
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
+            cpu.write_x(f.rd, s1.wrapping_add(s2 << 1));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -3797,9 +3788,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "SH1ADD.UW",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1);
-            let value2 = cpu.read_x(f.rs2);
-            cpu.write_x(f.rd, value1.wrapping_add((value2 & 0xffffffff) << 1));
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
+            cpu.write_x(f.rd, s1.wrapping_add((s2 & 0xffffffff) << 1));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -3810,9 +3801,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "SH2ADD",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1);
-            let value2 = cpu.read_x(f.rs2);
-            cpu.write_x(f.rd, value1.wrapping_add(value2 << 2));
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
+            cpu.write_x(f.rd, s1.wrapping_add(s2 << 2));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -3823,9 +3814,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "SH2ADD.UW",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1);
-            let value2 = cpu.read_x(f.rs2);
-            cpu.write_x(f.rd, value1.wrapping_add((value2 & 0xffffffff) << 2));
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
+            cpu.write_x(f.rd, s1.wrapping_add((s2 & 0xffffffff) << 2));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -3836,9 +3827,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "SH3ADD",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1);
-            let value2 = cpu.read_x(f.rs2);
-            cpu.write_x(f.rd, value1.wrapping_add(value2 << 3));
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
+            cpu.write_x(f.rd, s1.wrapping_add(s2 << 3));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -3849,9 +3840,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "SH3ADD.UW",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1);
-            let value2 = cpu.read_x(f.rs2);
-            cpu.write_x(f.rd, value1.wrapping_add((value2 & 0xffffffff) << 3));
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
+            cpu.write_x(f.rd, s1.wrapping_add((s2 & 0xffffffff) << 3));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -3862,10 +3853,10 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "SLLI.UW",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1);
+            let s1 = cpu.read_x(f.rs1);
             let mask = 0x3f;
             let shamt = (word >> 20) & mask;
-            cpu.write_x(f.rd, (value1 & 0xffffffff) << shamt);
+            cpu.write_x(f.rd, (s1 & 0xffffffff) << shamt);
             Ok(())
         },
         disassemble: dump_format_r,
@@ -3877,9 +3868,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "CZERO.EQZ",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1);
-            let value2 = cpu.read_x(f.rs2);
-            cpu.write_x(f.rd, if value2 == 0 { 0 } else { value1 });
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
+            cpu.write_x(f.rd, if s2 == 0 { 0 } else { s1 });
             Ok(())
         },
         disassemble: dump_format_r,
@@ -3890,9 +3881,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "CZERO.NEZ",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            let value1 = cpu.read_x(f.rs1);
-            let value2 = cpu.read_x(f.rs2);
-            cpu.write_x(f.rd, if value2 != 0 { 0 } else { value1 });
+            let s1 = cpu.read_x(f.rs1);
+            let s2 = cpu.read_x(f.rs2);
+            cpu.write_x(f.rd, if s2 != 0 { 0 } else { s1 });
             Ok(())
         },
         disassemble: dump_format_r,
