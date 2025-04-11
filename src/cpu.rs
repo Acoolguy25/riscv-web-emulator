@@ -40,7 +40,7 @@ pub struct Cpu {
     csr: Box<[u64]>, // XXX this should be replaced with individual registers
 
     mmu: Mmu,
-    reservation: Option<i64>,
+    reservation: Option<u64>,
     decode_dag: Vec<u16>,
 }
 
@@ -286,6 +286,7 @@ impl Cpu {
             };
             if minterrupt & intr != 0 && self.handle_trap(&trap, self.pc, true) {
                 self.wfi = false;
+                self.reservation = None;
                 return;
             }
         }
@@ -2093,8 +2094,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0xffffffff,
         data: 0x0000100f,
         name: "FENCE.I",
-        operation: |_cpu, _word, _address| {
+        operation: |_address, _word, cpu| {
             // Flush any cached instrutions.  We have none so far.
+            cpu.reservation = None;
             Ok(())
         },
         disassemble: dump_empty,
@@ -2430,9 +2432,12 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
             // @TODO: Implement properly
-            let value1 = cpu.read_x(f.rs1);
-            let data = cpu.mmu.load_virt_u32(value1 as u64)? as i32;
-            cpu.reservation = Some(value1); // Is virtual address ok?
+            let va = cpu.read_x(f.rs1);
+            let data = cpu.mmu.load_virt_u32(va as u64)? as i32;
+            let pa = cpu
+                .mmu
+                .translate_address(va as u64, MemoryAccessType::Read, false)?;
+            cpu.reservation = Some(pa);
             cpu.write_x(f.rd, i64::from(data));
             Ok(())
         },
@@ -2444,16 +2449,18 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "SC.W",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            // @TODO: Implement properly
-            let value1 = cpu.read_x(f.rs1);
+            let va = cpu.read_x(f.rs1);
             let value2 = cpu.read_x(f.rs2);
-            if cpu.reservation == Some(value1) {
-                cpu.mmu.store_virt_u32(value1 as u64, value2 as u32)?;
-                cpu.reservation = None;
+            let pa = cpu
+                .mmu
+                .translate_address(va as u64, MemoryAccessType::Read, false)?;
+            if cpu.reservation == Some(pa) {
+                cpu.mmu.store_virt_u32(va as u64, value2 as u32)?;
                 cpu.write_x(f.rd, 0);
             } else {
                 cpu.write_x(f.rd, 1);
             }
+            cpu.reservation = None;
             Ok(())
         },
         disassemble: dump_format_r,
@@ -2604,10 +2611,12 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "LR.D",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            // @TODO: Implement properly
-            let value1 = cpu.read_x(f.rs1);
-            let data = cpu.mmu.load_virt_u64(value1 as u64)?;
-            cpu.reservation = Some(value1); // Is virtual address ok?
+            let va = cpu.read_x(f.rs1);
+            let data = cpu.mmu.load_virt_u64(va as u64)?;
+            let pa = cpu
+                .mmu
+                .translate_address(va as u64, MemoryAccessType::Read, false)?;
+            cpu.reservation = Some(pa);
             cpu.write_x(f.rd, data as i64);
             Ok(())
         },
@@ -2619,16 +2628,18 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "SC.D",
         operation: |_address, word, cpu| {
             let f = parse_format_r(word);
-            // @TODO: Implement properly
-            let value1 = cpu.read_x(f.rs1);
+            let va = cpu.read_x(f.rs1);
             let value2 = cpu.read_x(f.rs2);
-            if cpu.reservation == Some(value1) {
-                cpu.mmu.store_virt_u64(value1 as u64, value2 as u64)?;
-                cpu.reservation = None;
+            let pa = cpu
+                .mmu
+                .translate_address(va as u64, MemoryAccessType::Read, false)?;
+            if cpu.reservation == Some(pa) {
+                cpu.mmu.store_virt_u64(va as u64, value2 as u64)?;
                 cpu.write_x(f.rd, 0);
             } else {
                 cpu.write_x(f.rd, 1);
             }
+            cpu.reservation = None;
             Ok(())
         },
         disassemble: dump_format_r,
@@ -3753,6 +3764,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
 
                 /* the current code TLB may have been flushed */
             }
+            cpu.reservation = None;
             Ok(())
         },
         disassemble: dump_empty,
