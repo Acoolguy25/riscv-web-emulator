@@ -24,20 +24,20 @@ const DTB_SIZE: usize = 0xfe0;
 /// It may also be said Bus.
 /// @TODO: Memory protection is not implemented yet. We should support.
 pub struct Mmu {
-    pub mip: u64, // CSR, but we keep it here for easy sharing
-    pub memory: Memory,
-    ppn: u64,                        // XXX Badly named root pointer; redundant
+    // CPU state that lives here
+    pub prv: PrivilegeMode,
+    pub mstatus: u64,
+    pub mip: u64,
+    pub satp: u64,
+    page_table_root: u64,            // XXX Redundant
     addressing_mode: AddressingMode, // XXX Redundantly derived from CSR
-    privilege_mode: PrivilegeMode,   // XXX Redundant with CPU state
+
+    pub memory: Memory,
     dtb: Vec<u8>,
     disk: VirtioBlockDisk,
     plic: Plic,
     clint: Clint,
     uart: Uart,
-
-    /// Address translation can be affected `mstatus` (MPRV, MPP in machine mode)
-    /// then `Mmu` has copy of it.
-    mstatus: u64, // XXX More redundant ("2 problems in CS...")
 
     /// Address translation page cache. Experimental feature.
     /// The cache is cleared when translation mapping can be changed;
@@ -91,17 +91,18 @@ impl Mmu {
         dtb[..content.len()].copy_from_slice(&content[..]);
 
         Self {
+            prv: PrivilegeMode::Machine,
+            mstatus: 0,
             mip: 0,
-            ppn: 0,
+            satp: 0,
+            page_table_root: 0,
             addressing_mode: AddressingMode::None,
-            privilege_mode: PrivilegeMode::Machine,
             memory: Memory::new(),
             dtb,
             disk: VirtioBlockDisk::new(),
             plic: Plic::new(),
             clint: Clint::new(),
             uart: Uart::new(terminal),
-            mstatus: 0,
             page_cache_enabled: false,
             fetch_page_cache: FnvHashMap::default(),
             load_page_cache: FnvHashMap::default(),
@@ -178,7 +179,7 @@ impl Mmu {
     /// # Arguments
     /// * `mode`
     pub fn update_privilege_mode(&mut self, mode: PrivilegeMode) {
-        self.privilege_mode = mode;
+        self.prv = mode;
         self.clear_page_cache();
     }
 
@@ -196,7 +197,7 @@ impl Mmu {
     /// # Arguments
     /// * `ppn`
     pub fn update_ppn(&mut self, ppn: u64) {
-        self.ppn = ppn;
+        self.page_table_root = ppn;
         self.clear_page_cache();
     }
 
@@ -634,7 +635,7 @@ impl Mmu {
         access: MemoryAccessType,
         side_effect_free: bool,
     ) -> Result<u64, Trap> {
-        let prv = self.privilege_mode;
+        let prv = self.prv;
         let effective_priv = if self.mstatus & MSTATUS_MPRV != 0
             && access != MemoryAccessType::Execute
         {
@@ -674,7 +675,7 @@ impl Mmu {
             return page_fault(va as i64, access);
         }
         let pte_addr_bits = 44;
-        let mut pte_addr = (self.ppn & ((1 << pte_addr_bits) - 1)) << PG_SHIFT;
+        let mut pte_addr = (self.page_table_root & ((1 << pte_addr_bits) - 1)) << PG_SHIFT;
         let pte_bits = 12 - pte_size_log2;
         let pte_mask = (1 << pte_bits) - 1;
 
