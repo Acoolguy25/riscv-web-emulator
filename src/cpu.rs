@@ -63,9 +63,8 @@ pub struct Exception {
     pub tval: i64,
 }
 
-fn get_priv_encoding(mode: PrivMode) -> u8 {
-    assert_ne!(mode, PrivMode::Reserved);
-    mode as u8
+fn get_priv_encoding(mode: PrivMode) -> u64 {
+    u64::from(mode)
 }
 
 /// Returns `PrivMode` from encoded privilege mode bits
@@ -74,7 +73,7 @@ fn get_priv_encoding(mode: PrivMode) -> u8 {
 #[must_use]
 pub fn get_priv_mode(encoding: u64) -> PrivMode {
     assert_ne!(encoding, 2);
-    let Some(m) = FromPrimitive::from_u64(encoding) else {
+    let Ok(m) = PrivMode::try_from(encoding) else {
         unreachable!();
     };
     m
@@ -277,7 +276,7 @@ impl Cpu {
     #[allow(clippy::similar_names, clippy::too_many_lines)]
     #[allow(clippy::cast_sign_loss)]
     fn handle_trap(&mut self, exc: &Exception, insn_addr: i64, is_interrupt: bool) -> bool {
-        let current_priv_encoding = u64::from(get_priv_encoding(self.mmu.prv));
+        let current_priv_encoding = get_priv_encoding(self.mmu.prv);
         let cause = get_trap_cause(exc);
 
         // First, determine which privilege mode should handle the trap.
@@ -301,13 +300,11 @@ impl Cpu {
         } else {
             PrivMode::U
         };
-        let new_priv_encoding = u64::from(get_priv_encoding(new_priv_mode));
-
+        let new_priv_encoding = get_priv_encoding(new_priv_mode);
         let current_status = match self.mmu.prv {
             PrivMode::M => self.read_csr_raw(Csr::Mstatus),
             PrivMode::S => self.read_csr_raw(Csr::Sstatus),
             PrivMode::U => self.read_csr_raw(Csr::Ustatus),
-            PrivMode::Reserved => panic!(),
         };
 
         // Second, ignore the interrupt if it's disabled by some conditions
@@ -317,7 +314,6 @@ impl Cpu {
                 PrivMode::M => self.read_csr_raw(Csr::Mie),
                 PrivMode::S => self.read_csr_raw(Csr::Sie),
                 PrivMode::U => self.read_csr_raw(Csr::Uie),
-                PrivMode::Reserved => panic!(),
             };
 
             let current_mie = (current_status >> 3) & 1;
@@ -349,7 +345,6 @@ impl Cpu {
                         PrivMode::M => current_mie,
                         PrivMode::S => current_sie,
                         PrivMode::U => current_uie,
-                        PrivMode::Reserved => panic!(),
                     }
             {
                 return false;
@@ -415,25 +410,21 @@ impl Cpu {
             PrivMode::M => Csr::Mepc,
             PrivMode::S => Csr::Sepc,
             PrivMode::U => Csr::Uepc,
-            PrivMode::Reserved => panic!(),
         };
         let csr_cause_address = match self.mmu.prv {
             PrivMode::M => Csr::Mcause,
             PrivMode::S => Csr::Scause,
             PrivMode::U => Csr::Ucause,
-            PrivMode::Reserved => panic!(),
         };
         let csr_tval_address = match self.mmu.prv {
             PrivMode::M => Csr::Mtval,
             PrivMode::S => Csr::Stval,
             PrivMode::U => Csr::Utval,
-            PrivMode::Reserved => panic!(),
         };
         let csr_tvec_address = match self.mmu.prv {
             PrivMode::M => Csr::Mtvec,
             PrivMode::S => Csr::Stvec,
             PrivMode::U => Csr::Utvec,
-            PrivMode::Reserved => panic!(),
         };
 
         self.write_csr_raw(csr_epc_address, insn_addr as u64);
@@ -465,11 +456,11 @@ impl Cpu {
             PrivMode::U => {
                 panic!("Not implemented yet");
             }
-            PrivMode::Reserved => panic!(), // shouldn't happen
         }
         true
     }
 
+    #[allow(clippy::cast_lossless)]
     fn has_csr_access_privilege(&self, csrno: u16) -> Option<Csr> {
         let csr = FromPrimitive::from_u16(csrno)?;
 
@@ -479,7 +470,7 @@ impl Cpu {
         }
 
         let privilege = (csrno >> 8) & 3;
-        if privilege as u8 > get_priv_encoding(self.mmu.prv) {
+        if u64::from(privilege) > get_priv_encoding(self.mmu.prv) {
             log::warn!("** {:016x}: Lacking priviledge for {csr:?}", self.pc);
             return None;
         }
@@ -1802,7 +1793,6 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
                 PrivMode::U => Trap::EnvironmentCallFromUMode,
                 PrivMode::S => Trap::EnvironmentCallFromSMode,
                 PrivMode::M => Trap::EnvironmentCallFromMMode,
-                PrivMode::Reserved => panic!("Unknown Privilege mode"),
             };
             Err(Exception {
                 trap: trap_type,
@@ -3615,7 +3605,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             cpu.npc = cpu.read_csr(Csr::Mepc as u16)? as i64;
             let status = cpu.read_csr_raw(Csr::Mstatus);
             let mpie = (status >> 7) & 1;
-            let mpp = (status >> 11) & 0x3;
+            let mpp = (status >> 11) & 3;
             let mprv = match get_priv_mode(mpp) {
                 PrivMode::M => (status >> 17) & 1,
                 _ => 0,
@@ -3624,12 +3614,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             // and override MPRV[17]
             let new_status = (status & !0x21888) | (mprv << 17) | (mpie << 3) | (1 << 7);
             cpu.write_csr_raw(Csr::Mstatus, new_status);
-            cpu.mmu.update_priv_mode(match mpp {
-                0 => PrivMode::U,
-                1 => PrivMode::S,
-                3 => PrivMode::M,
-                _ => panic!(), // Shouldn't happen
-            });
+            cpu.mmu.update_priv_mode(get_priv_mode(mpp));
             Ok(())
         },
         disassemble: dump_empty,
@@ -3663,8 +3648,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             // and override MPRV[17]
             let new_status = (status & !0x20122) | (mprv << 17) | (spie << 1) | (1 << 5);
             cpu.write_csr_raw(Csr::Sstatus, new_status);
-            cpu.mmu.prv = if spp == 0 { PrivMode::U } else { PrivMode::S };
-            cpu.mmu.clear_page_cache();
+            cpu.mmu.update_priv_mode(get_priv_mode(spp));
             Ok(())
         },
         disassemble: dump_empty,

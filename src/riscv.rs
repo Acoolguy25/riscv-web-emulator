@@ -1,4 +1,5 @@
 use num_derive::FromPrimitive;
+use std::convert::TryFrom;
 
 #[derive(Clone, Copy, Debug, FromPrimitive)]
 pub enum Trap {
@@ -32,12 +33,33 @@ pub enum Trap {
     MachineExternalInterrupt = 111,
 }
 
-#[derive(Clone, Copy, Debug, FromPrimitive, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PrivMode {
     U,
     S,
-    Reserved,
     M,
+}
+
+impl TryFrom<u64> for PrivMode {
+    type Error = ();
+    fn try_from(x: u64) -> Result<Self, Self::Error> {
+        match x {
+            0 => Ok(Self::U),
+            1 => Ok(Self::S),
+            3 => Ok(Self::M),
+            _ => Err(()),
+        }
+    }
+}
+
+impl From<PrivMode> for u64 {
+    fn from(x: PrivMode) -> Self {
+        match x {
+            PrivMode::U => 0,
+            PrivMode::S => 1,
+            PrivMode::M => 3,
+        }
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]

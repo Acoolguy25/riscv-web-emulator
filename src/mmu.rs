@@ -1,5 +1,6 @@
 #![allow(clippy::unreadable_literal, clippy::cast_possible_wrap)]
 
+use crate::cpu::get_priv_mode;
 use crate::cpu::{
     CONFIG_SW_MANAGED_A_AND_D, Exception, MSTATUS_MPP_SHIFT, MSTATUS_MPRV, MSTATUS_MXR,
     MSTATUS_SUM, PG_SHIFT,
@@ -21,7 +22,6 @@ use crate::terminal::Terminal;
 use fnv::FnvHashMap;
 use log::trace;
 use log::warn;
-use num_traits::FromPrimitive;
 
 const DTB_SIZE: usize = 0xfe0;
 
@@ -586,6 +586,7 @@ impl Mmu {
     #[allow(
         clippy::cast_possible_wrap,
         clippy::too_many_lines,
+        clippy::expect_used,
         clippy::cognitive_complexity
     )]
     fn translate_address_slow(
@@ -595,17 +596,13 @@ impl Mmu {
         side_effect_free: bool,
     ) -> Result<u64, Exception> {
         let prv = self.prv;
-        let effective_prv = if self.mstatus & MSTATUS_MPRV != 0
-            && access != MemoryAccessType::Execute
-        {
-            // Use previous privilege
-            let Some(prv) = FromPrimitive::from_u64((self.mstatus >> MSTATUS_MPP_SHIFT) & 3) else {
-                unreachable!();
+        let effective_prv =
+            if self.mstatus & MSTATUS_MPRV != 0 && access != MemoryAccessType::Execute {
+                // Use previous privilege
+                get_priv_mode((self.mstatus >> MSTATUS_MPP_SHIFT) & 3)
+            } else {
+                prv
             };
-            prv
-        } else {
-            prv
-        };
 
         let satp_mode = ((self.satp >> SATP_MODE_SHIFT) & SATP_MODE_MASK) as usize;
         if effective_prv == PrivMode::M || satp_mode == SatpMode::Bare as usize {
