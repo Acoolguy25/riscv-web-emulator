@@ -13,13 +13,13 @@ pub mod elf_analyzer;
 pub mod fp;
 pub mod memory;
 pub mod mmu;
+pub mod riscv;
 pub mod rvc;
 pub mod terminal;
 
 use crate::cpu::Cpu;
 use crate::elf_analyzer::ElfAnalyzer;
 use crate::terminal::Terminal;
-pub use cpu::{Trap, TrapType};
 use fnv::FnvHashMap;
 
 /// RISC-V emulator. It emulates RISC-V CPU and peripheral devices.

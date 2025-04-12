@@ -1,15 +1,22 @@
 #![allow(clippy::unreadable_literal, clippy::cast_possible_wrap)]
 
 use crate::cpu::{
-    CONFIG_SW_MANAGED_A_AND_D, MSTATUS_MPP_SHIFT, MSTATUS_MPRV, MSTATUS_MXR, MSTATUS_SUM, PG_SHIFT,
-    PrivilegeMode, Trap, TrapType,
+    CONFIG_SW_MANAGED_A_AND_D, Exception, MSTATUS_MPP_SHIFT, MSTATUS_MPRV, MSTATUS_MXR,
+    MSTATUS_SUM, PG_SHIFT,
 };
-use crate::csr::{SATP_MODE_MASK, SATP_MODE_SHIFT, SATP_PPN_MASK, SATP_PPN_SHIFT, SatpMode};
+use crate::csr::SATP_MODE_MASK;
+use crate::csr::SATP_MODE_SHIFT;
+use crate::csr::SATP_PPN_MASK;
+use crate::csr::SATP_PPN_SHIFT;
+use crate::csr::SatpMode;
 use crate::device::clint::Clint;
 use crate::device::plic::Plic;
 use crate::device::uart::Uart;
 use crate::device::virtio_block_disk::VirtioBlockDisk;
 pub use crate::memory::*;
+use crate::riscv::MemoryAccessType;
+use crate::riscv::PrivMode;
+use crate::riscv::Trap;
 use crate::terminal::Terminal;
 use fnv::FnvHashMap;
 use log::trace;
@@ -26,7 +33,7 @@ const DTB_SIZE: usize = 0xfe0;
 /// @TODO: Memory protection is not implemented yet. We should support.
 pub struct Mmu {
     // CPU state that lives here
-    pub prv: PrivilegeMode,
+    pub prv: PrivMode,
     pub mstatus: u64,
     pub mip: u64,
     pub satp: u64,
@@ -40,27 +47,16 @@ pub struct Mmu {
 
     /// Address translation page cache. Experimental feature.
     /// The cache is cleared when translation mapping can be changed;
-    /// xlen, ppn, `privilege_mode`, or `addressing_mode` is updated.
-    /// Precisely it isn't good enough because page table entries
-    /// can be updated anytime with store instructions, of course
-    /// very depending on how pages are mapped tho.
-    /// But observing all page table entries is high cost so
-    /// ignoring so far. Then this cache optimization can cause a bug
-    /// due to unexpected (meaning not in page fault handler)
-    /// page table entry update. So this is experimental feature and
-    /// disabled by default. If you want to enable, use `enable_page_cache()`.
+    /// SATP, or PRV is updated or FENCE.VMA is executed.
+    /// Technically page table entries
+    /// can be updated anytime with store instructions, but RISC-V
+    /// allows for this and requires that FENCE.VMA is executed before
+    /// any of these are observed.
+    /// If you want to enable, use `enable_page_cache()`.
     page_cache_enabled: bool,
     fetch_page_cache: FnvHashMap<u64, u64>,
     load_page_cache: FnvHashMap<u64, u64>,
     store_page_cache: FnvHashMap<u64, u64>,
-}
-
-// XXX Shouldn't this be in cpu.rs?
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub enum MemoryAccessType {
-    Execute,
-    Read,
-    Write,
 }
 
 pub const PTE_V_MASK: u64 = 1 << 0;
@@ -83,7 +79,7 @@ impl Mmu {
         dtb[..content.len()].copy_from_slice(&content[..]);
 
         Self {
-            prv: PrivilegeMode::Machine,
+            prv: PrivMode::M,
             mstatus: 0,
             mip: 0,
             satp: 0,
@@ -159,7 +155,7 @@ impl Mmu {
     ///
     /// # Arguments
     /// * `mode`
-    pub fn update_privilege_mode(&mut self, mode: PrivilegeMode) {
+    pub fn update_priv_mode(&mut self, mode: PrivMode) {
         self.prv = mode;
         self.clear_page_cache();
     }
@@ -171,7 +167,7 @@ impl Mmu {
     /// * `va` Virtual address
     /// # Errors
     /// Exceptions are returned as errors
-    pub fn load_virt_u8(&mut self, va: u64) -> Result<u8, Trap> {
+    pub fn load_virt_u8(&mut self, va: u64) -> Result<u8, Exception> {
         let pa = self.translate_address(va, MemoryAccessType::Read, false)?;
         Ok(self.load_phys_u8(pa))
     }
@@ -182,7 +178,7 @@ impl Mmu {
     /// # Arguments
     /// * `va` Virtual address
     /// * `width` Must be 1, 2, 4, or 8
-    fn load_virt_bytes(&mut self, va: u64, width: u64) -> Result<u64, Trap> {
+    fn load_virt_bytes(&mut self, va: u64, width: u64) -> Result<u64, Exception> {
         debug_assert!(
             width == 1 || width == 2 || width == 4 || width == 8,
             "Width must be 1, 2, 4, or 8. {width:X}"
@@ -218,7 +214,7 @@ impl Mmu {
     //
     // XXX Still being used by the atomics
     #[allow(clippy::cast_possible_truncation)]
-    pub fn load_virt_u32(&mut self, va: u64) -> Result<u32, Trap> {
+    pub fn load_virt_u32(&mut self, va: u64) -> Result<u32, Exception> {
         match self.load_virt_bytes(va, 4) {
             Ok(data) => Ok(data as u32),
             Err(e) => Err(e),
@@ -232,7 +228,7 @@ impl Mmu {
     /// * `va` Virtual address
     /// # Errors
     /// Exceptions are returned as errors
-    pub fn load_virt_u64(&mut self, va: u64) -> Result<u64, Trap> {
+    pub fn load_virt_u64(&mut self, va: u64) -> Result<u64, Exception> {
         match self.load_virt_bytes(va, 8) {
             Ok(data) => Ok(data),
             Err(e) => Err(e),
@@ -249,7 +245,7 @@ impl Mmu {
     // XXX in contrast to `load_virt_u64` it takes the address as i64.  Eventually all the memory
     // ops will do this, but for the moment we have this odd ugliness
     #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
-    pub fn load_virt_u64_(&mut self, va: i64) -> Result<i64, Trap> {
+    pub fn load_virt_u64_(&mut self, va: i64) -> Result<i64, Exception> {
         // XXX All addresses should be i64
         Ok(self.load_virt_bytes(va as u64, 8)? as i64)
     }
@@ -262,11 +258,11 @@ impl Mmu {
     /// * `value`
     /// # Errors
     /// Exceptions are returned as errors
-    pub fn store_virt_u8(&mut self, va: u64, value: u8) -> Result<(), Trap> {
+    pub fn store_virt_u8(&mut self, va: u64, value: u8) -> Result<(), Exception> {
         let pa = self.translate_address(va, MemoryAccessType::Write, false)?;
-        self.store_phys_u8(pa, value).map_err(|()| Trap {
-            trap_type: TrapType::StoreAccessFault,
-            value: va as i64,
+        self.store_phys_u8(pa, value).map_err(|()| Exception {
+            trap: Trap::StoreAccessFault,
+            tval: va as i64,
         })
     }
 
@@ -282,7 +278,7 @@ impl Mmu {
     /// # Panics
     /// width must be 1, 2, 4, or 8
     #[allow(clippy::cast_possible_truncation)]
-    pub fn store_virt_bytes(&mut self, va: u64, value: u64, width: u64) -> Result<(), Trap> {
+    pub fn store_virt_bytes(&mut self, va: u64, value: u64, width: u64) -> Result<(), Exception> {
         debug_assert!(
             width == 1 || width == 2 || width == 4 || width == 8,
             "Width must be 1, 2, 4, or 8. {width:X}"
@@ -298,9 +294,9 @@ impl Mmu {
                 8 => self.store_phys_u64(pa, value),
                 _ => panic!("Width must be 1, 2, 4, or 8. {width:X}"),
             };
-            r.map_err(|()| Trap {
-                trap_type: TrapType::StoreAccessFault,
-                value: va as i64,
+            r.map_err(|()| Exception {
+                trap: Trap::StoreAccessFault,
+                tval: va as i64,
             })
         } else {
             for i in 0..width {
@@ -318,7 +314,7 @@ impl Mmu {
     /// * `value` data written
     /// # Errors
     /// Exceptions are returned as errors
-    pub fn store_virt_u16(&mut self, va: u64, value: u16) -> Result<(), Trap> {
+    pub fn store_virt_u16(&mut self, va: u64, value: u16) -> Result<(), Exception> {
         self.store_virt_bytes(va, u64::from(value), 2)
     }
 
@@ -330,7 +326,7 @@ impl Mmu {
     /// * `value` data written
     /// # Errors
     /// Exceptions are returned as errors
-    pub fn store_virt_u32(&mut self, va: u64, value: u32) -> Result<(), Trap> {
+    pub fn store_virt_u32(&mut self, va: u64, value: u32) -> Result<(), Exception> {
         self.store_virt_bytes(va, u64::from(value), 4)
     }
 
@@ -342,14 +338,14 @@ impl Mmu {
     /// * `value` data written
     /// # Errors
     /// Exceptions are returned as errors
-    pub fn store_virt_u64(&mut self, va: u64, value: u64) -> Result<(), Trap> {
+    pub fn store_virt_u64(&mut self, va: u64, value: u64) -> Result<(), Exception> {
         self.store_virt_bytes(va, value, 8)
     }
 
     /// # Errors
     /// Exceptions are returned as errors
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    pub fn store64(&mut self, va: i64, value: i64) -> Result<(), Trap> {
+    pub fn store64(&mut self, va: i64, value: i64) -> Result<(), Exception> {
         self.store_virt_bytes(va as u64, value as u64, 8)
     }
 
@@ -358,7 +354,7 @@ impl Mmu {
     // XXX in contrast to `store_virt_u32` it takes the address and data as i64.
     // Eventually all the memory ops will do this, but for the moment we have this odd ugliness
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    pub fn store_virt_u32_(&mut self, va: i64, value: i64) -> Result<(), Trap> {
+    pub fn store_virt_u32_(&mut self, va: i64, value: i64) -> Result<(), Exception> {
         self.store_virt_bytes(va as u64, value as u64, 4)
     }
 
@@ -556,7 +552,7 @@ impl Mmu {
         address: u64,
         access_type: MemoryAccessType,
         side_effect_free: bool,
-    ) -> Result<u64, Trap> {
+    ) -> Result<u64, Exception> {
         let v_page = address & !0xfff;
 
         let cache = if self.page_cache_enabled {
@@ -597,9 +593,9 @@ impl Mmu {
         va: u64,
         access: MemoryAccessType,
         side_effect_free: bool,
-    ) -> Result<u64, Trap> {
+    ) -> Result<u64, Exception> {
         let prv = self.prv;
-        let effective_priv = if self.mstatus & MSTATUS_MPRV != 0
+        let effective_prv = if self.mstatus & MSTATUS_MPRV != 0
             && access != MemoryAccessType::Execute
         {
             // Use previous privilege
@@ -612,8 +608,7 @@ impl Mmu {
         };
 
         let satp_mode = ((self.satp >> SATP_MODE_SHIFT) & SATP_MODE_MASK) as usize;
-        if matches!(effective_priv, PrivilegeMode::Machine) || satp_mode == SatpMode::Bare as usize
-        {
+        if effective_prv == PrivMode::M || satp_mode == SatpMode::Bare as usize {
             return Ok(va);
         }
 
@@ -671,7 +666,7 @@ impl Mmu {
             }
 
             // priviledge check
-            if effective_priv == PrivilegeMode::Supervisor {
+            if effective_prv == PrivMode::S {
                 if pte & PTE_U_MASK != 0 && self.mstatus & MSTATUS_SUM == 0 {
                     // XXX Debug log would be useful
                     warn!("** {prv:?} mode access to {va:08x} denied: U & !SUM");
@@ -756,25 +751,25 @@ impl Mmu {
 }
 
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)] // XXX Try to remove this later when the u64 -> i64 conversion is done
-const fn page_fault<T>(address: i64, access_type: MemoryAccessType) -> Result<T, Trap> {
-    Err::<T, Trap>(Trap {
-        trap_type: match access_type {
-            MemoryAccessType::Read => TrapType::LoadPageFault,
-            MemoryAccessType::Write => TrapType::StorePageFault,
-            MemoryAccessType::Execute => TrapType::InstructionPageFault,
+const fn page_fault<T>(address: i64, access_type: MemoryAccessType) -> Result<T, Exception> {
+    Err::<T, Exception>(Exception {
+        trap: match access_type {
+            MemoryAccessType::Read => Trap::LoadPageFault,
+            MemoryAccessType::Write => Trap::StorePageFault,
+            MemoryAccessType::Execute => Trap::InstructionPageFault,
         },
-        value: address,
+        tval: address,
     })
 }
 
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)] // XXX Try to remove this later when the u64 -> i64 conversion is done
-const fn access_fault<T>(address: i64, access_type: MemoryAccessType) -> Result<T, Trap> {
-    Err::<T, Trap>(Trap {
-        trap_type: match access_type {
-            MemoryAccessType::Read => TrapType::LoadAccessFault,
-            MemoryAccessType::Write => TrapType::StoreAccessFault,
-            MemoryAccessType::Execute => TrapType::InstructionAccessFault,
+const fn access_fault<T>(address: i64, access_type: MemoryAccessType) -> Result<T, Exception> {
+    Err::<T, Exception>(Exception {
+        trap: match access_type {
+            MemoryAccessType::Read => Trap::LoadAccessFault,
+            MemoryAccessType::Write => Trap::StoreAccessFault,
+            MemoryAccessType::Execute => Trap::InstructionAccessFault,
         },
-        value: address,
+        tval: address,
     })
 }

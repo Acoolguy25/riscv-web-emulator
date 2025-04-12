@@ -7,13 +7,17 @@ use crate::fp;
 use crate::fp::{
     RoundingMode, Sf, Sf32, Sf64, cvt_i32_sf32, cvt_i64_sf32, cvt_u32_sf32, cvt_u64_sf32,
 };
-use crate::mmu::MemoryAccessType::{Execute, Read, Write};
-use crate::mmu::{MemoryAccessType, Mmu};
+use crate::mmu::Mmu;
+use crate::riscv::MemoryAccessType;
+use crate::riscv::MemoryAccessType::Execute;
+use crate::riscv::MemoryAccessType::Read;
+use crate::riscv::MemoryAccessType::Write;
+use crate::riscv::PrivMode;
+use crate::riscv::Trap;
 use crate::rvc;
 use crate::terminal::Terminal;
 pub use csr::*;
 use log;
-use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use std::fmt::Write as _;
 
@@ -53,70 +57,22 @@ pub struct Cpu {
     decode_dag: Vec<u16>, // Decoding table
 }
 
-// XXX migrate to riscv.rs
-// but do we actually want this over just some numeric constants?
-// Alternative, could be just U, S, Resrvd, M
-#[allow(dead_code)]
-#[derive(Clone, Copy, Debug, FromPrimitive, PartialEq, Eq)]
-pub enum PrivilegeMode {
-    // XXX PrivMode?
-    User,
-    Supervisor,
-    Reserved,
-    Machine,
-}
-
 #[derive(Debug)]
-pub struct Trap {
-    // XXX rename Exception?
-    pub trap_type: TrapType,
-    pub value: i64, // Trap type specific value (tval) XXX Rename
+pub struct Exception {
+    pub trap: Trap,
+    pub tval: i64,
 }
 
-#[derive(Clone, Copy, Debug, FromPrimitive)]
-pub enum TrapType {
-    // XXX Rename Trap?
-    InstructionAddressMisaligned = 0,
-    InstructionAccessFault,
-    IllegalInstruction,
-    Breakpoint,
-    LoadAddressMisaligned,
-    LoadAccessFault,
-    StoreAddressMisaligned,
-    StoreAccessFault,
-    EnvironmentCallFromUMode,
-    EnvironmentCallFromSMode,
-    // Reserved
-    EnvironmentCallFromMMode = 11,
-    InstructionPageFault,
-    LoadPageFault,
-    // Reserved
-    StorePageFault = 15,
-
-    UserSoftwareInterrupt = 100,
-    SupervisorSoftwareInterrupt = 101,
-    MachineSoftwareInterrupt = 103,
-
-    UserTimerInterrupt = 104,
-    SupervisorTimerInterrupt = 105,
-    MachineTimerInterrupt = 107,
-
-    UserExternalInterrupt = 108,
-    SupervisorExternalInterrupt = 109,
-    MachineExternalInterrupt = 111,
-}
-
-// bigger number is higher privilege level
-const fn get_privilege_encoding(mode: PrivilegeMode) -> u8 {
-    assert!(!matches!(mode, PrivilegeMode::Reserved)); // XXX mode != Resvrd
+fn get_priv_encoding(mode: PrivMode) -> u8 {
+    assert_ne!(mode, PrivMode::Reserved);
     mode as u8
 }
 
-/// Returns `PrivilegeMode` from encoded privilege mode bits
+/// Returns `PrivMode` from encoded privilege mode bits
 /// # Panics
 /// On unknown modes crash
 #[must_use]
-pub fn get_privilege_mode(encoding: u64) -> PrivilegeMode {
+pub fn get_priv_mode(encoding: u64) -> PrivMode {
     assert_ne!(encoding, 2);
     let Some(m) = FromPrimitive::from_u64(encoding) else {
         unreachable!();
@@ -124,12 +80,12 @@ pub fn get_privilege_mode(encoding: u64) -> PrivilegeMode {
     m
 }
 
-const fn get_trap_cause(trap: &Trap) -> u64 {
+const fn get_trap_cause(exc: &Exception) -> u64 {
     let interrupt_bit = 0x8000_0000_0000_0000_u64;
-    if (trap.trap_type as u64) < (TrapType::UserSoftwareInterrupt as u64) {
-        trap.trap_type as u64
+    if (exc.trap as u64) < (Trap::UserSoftwareInterrupt as u64) {
+        exc.trap as u64
     } else {
-        trap.trap_type as u64 - TrapType::UserSoftwareInterrupt as u64 + interrupt_bit
+        exc.trap as u64 - Trap::UserSoftwareInterrupt as u64 + interrupt_bit
     }
 }
 
@@ -207,11 +163,11 @@ impl Cpu {
         self.read_x(reg as usize)
     }
 
-    fn check_float_access(&self, rm: usize) -> Result<(), Trap> {
+    fn check_float_access(&self, rm: usize) -> Result<(), Exception> {
         if self.fs == 0 || rm == 5 || rm == 6 {
-            Err(Trap {
-                trap_type: TrapType::IllegalInstruction,
-                value: i64::from(self.insn), // XXX we could assign this outside, eliminating the need for self.insn here
+            Err(Exception {
+                trap: Trap::IllegalInstruction,
+                tval: i64::from(self.insn), // XXX we could assign this outside, eliminating the need for self.insn here
             })
         } else {
             Ok(())
@@ -268,9 +224,9 @@ impl Cpu {
         let (insn, npc) = decompress(self.pc, word as u32);
         self.npc = npc;
         let Ok(decoded) = decode(&self.decode_dag, insn) else {
-            self.handle_exception(&Trap {
-                trap_type: TrapType::IllegalInstruction,
-                value: word,
+            self.handle_exception(&Exception {
+                trap: Trap::IllegalInstruction,
+                tval: word,
             });
             return;
         };
@@ -282,7 +238,7 @@ impl Cpu {
 
     #[allow(clippy::cast_sign_loss)]
     fn handle_interrupt(&mut self) {
-        use self::TrapType::{
+        use self::Trap::{
             MachineExternalInterrupt, MachineSoftwareInterrupt, MachineTimerInterrupt,
             SupervisorExternalInterrupt, SupervisorSoftwareInterrupt, SupervisorTimerInterrupt,
         };
@@ -300,9 +256,9 @@ impl Cpu {
             (MIP_SSIP, SupervisorSoftwareInterrupt),
             (MIP_STIP, SupervisorTimerInterrupt),
         ] {
-            let trap = Trap {
-                trap_type,
-                value: self.npc,
+            let trap = Exception {
+                trap: trap_type,
+                tval: self.npc,
             };
             if minterrupt & intr != 0 && self.handle_trap(&trap, self.npc, true) {
                 self.wfi = false;
@@ -312,17 +268,17 @@ impl Cpu {
         }
     }
 
-    fn handle_exception(&mut self, exception: &Trap) {
+    fn handle_exception(&mut self, exc: &Exception) {
         // XXX If we pass in the address we don't need
         // self.pc, but that requires us to call handle exception from a centrol location with access to the pc.
-        self.handle_trap(exception, self.pc, false);
+        self.handle_trap(exc, self.pc, false);
     }
 
     #[allow(clippy::similar_names, clippy::too_many_lines)]
     #[allow(clippy::cast_sign_loss)]
-    fn handle_trap(&mut self, trap: &Trap, insn_addr: i64, is_interrupt: bool) -> bool {
-        let current_privilege_encoding = u64::from(get_privilege_encoding(self.mmu.prv));
-        let cause = get_trap_cause(trap);
+    fn handle_trap(&mut self, exc: &Exception, insn_addr: i64, is_interrupt: bool) -> bool {
+        let current_priv_encoding = u64::from(get_priv_encoding(self.mmu.prv));
+        let cause = get_trap_cause(exc);
 
         // First, determine which privilege mode should handle the trap.
         // @TODO: Check if this logic is correct
@@ -338,30 +294,30 @@ impl Cpu {
         };
         let pos = cause & 0xffff;
 
-        let new_privilege_mode = if (mdeleg >> pos) & 1 == 0 {
-            PrivilegeMode::Machine
+        let new_priv_mode = if (mdeleg >> pos) & 1 == 0 {
+            PrivMode::M
         } else if (sdeleg >> pos) & 1 == 0 {
-            PrivilegeMode::Supervisor
+            PrivMode::S
         } else {
-            PrivilegeMode::User
+            PrivMode::U
         };
-        let new_privilege_encoding = u64::from(get_privilege_encoding(new_privilege_mode));
+        let new_priv_encoding = u64::from(get_priv_encoding(new_priv_mode));
 
         let current_status = match self.mmu.prv {
-            PrivilegeMode::Machine => self.read_csr_raw(Csr::Mstatus),
-            PrivilegeMode::Supervisor => self.read_csr_raw(Csr::Sstatus),
-            PrivilegeMode::User => self.read_csr_raw(Csr::Ustatus),
-            PrivilegeMode::Reserved => panic!(),
+            PrivMode::M => self.read_csr_raw(Csr::Mstatus),
+            PrivMode::S => self.read_csr_raw(Csr::Sstatus),
+            PrivMode::U => self.read_csr_raw(Csr::Ustatus),
+            PrivMode::Reserved => panic!(),
         };
 
         // Second, ignore the interrupt if it's disabled by some conditions
 
         if is_interrupt {
-            let ie = match new_privilege_mode {
-                PrivilegeMode::Machine => self.read_csr_raw(Csr::Mie),
-                PrivilegeMode::Supervisor => self.read_csr_raw(Csr::Sie),
-                PrivilegeMode::User => self.read_csr_raw(Csr::Uie),
-                PrivilegeMode::Reserved => panic!(),
+            let ie = match new_priv_mode {
+                PrivMode::M => self.read_csr_raw(Csr::Mie),
+                PrivMode::S => self.read_csr_raw(Csr::Sie),
+                PrivMode::U => self.read_csr_raw(Csr::Uie),
+                PrivMode::Reserved => panic!(),
             };
 
             let current_mie = (current_status >> 3) & 1;
@@ -387,13 +343,13 @@ impl Cpu {
             // 3. Interrupt is enabled if xIE in xstatus is 1 where x is privilege level
             // and new privilege level equals to current privilege level
 
-            if new_privilege_encoding < current_privilege_encoding
-                || current_privilege_encoding == new_privilege_encoding
+            if new_priv_encoding < current_priv_encoding
+                || current_priv_encoding == new_priv_encoding
                     && 0 == match self.mmu.prv {
-                        PrivilegeMode::Machine => current_mie,
-                        PrivilegeMode::Supervisor => current_sie,
-                        PrivilegeMode::User => current_uie,
-                        PrivilegeMode::Reserved => panic!(),
+                        PrivMode::M => current_mie,
+                        PrivMode::S => current_sie,
+                        PrivMode::U => current_uie,
+                        PrivMode::Reserved => panic!(),
                     }
             {
                 return false;
@@ -402,48 +358,48 @@ impl Cpu {
             // Interrupt can be maskable by xie csr register
             // where x is a new privilege mode.
 
-            match trap.trap_type {
-                TrapType::UserSoftwareInterrupt => {
+            match exc.trap {
+                Trap::UserSoftwareInterrupt => {
                     if usie == 0 {
                         return false;
                     }
                 }
-                TrapType::SupervisorSoftwareInterrupt => {
+                Trap::SupervisorSoftwareInterrupt => {
                     if ssie == 0 {
                         return false;
                     }
                 }
-                TrapType::MachineSoftwareInterrupt => {
+                Trap::MachineSoftwareInterrupt => {
                     if msie == 0 {
                         return false;
                     }
                 }
-                TrapType::UserTimerInterrupt => {
+                Trap::UserTimerInterrupt => {
                     if utie == 0 {
                         return false;
                     }
                 }
-                TrapType::SupervisorTimerInterrupt => {
+                Trap::SupervisorTimerInterrupt => {
                     if stie == 0 {
                         return false;
                     }
                 }
-                TrapType::MachineTimerInterrupt => {
+                Trap::MachineTimerInterrupt => {
                     if mtie == 0 {
                         return false;
                     }
                 }
-                TrapType::UserExternalInterrupt => {
+                Trap::UserExternalInterrupt => {
                     if ueie == 0 {
                         return false;
                     }
                 }
-                TrapType::SupervisorExternalInterrupt => {
+                Trap::SupervisorExternalInterrupt => {
                     if seie == 0 {
                         return false;
                     }
                 }
-                TrapType::MachineExternalInterrupt => {
+                Trap::MachineExternalInterrupt => {
                     if meie == 0 {
                         return false;
                     }
@@ -454,36 +410,35 @@ impl Cpu {
 
         // So, this trap should be taken
 
-        self.mmu.prv = new_privilege_mode;
-        self.mmu.update_privilege_mode(self.mmu.prv);
+        self.mmu.update_priv_mode(new_priv_mode);
         let csr_epc_address = match self.mmu.prv {
-            PrivilegeMode::Machine => Csr::Mepc,
-            PrivilegeMode::Supervisor => Csr::Sepc,
-            PrivilegeMode::User => Csr::Uepc,
-            PrivilegeMode::Reserved => panic!(),
+            PrivMode::M => Csr::Mepc,
+            PrivMode::S => Csr::Sepc,
+            PrivMode::U => Csr::Uepc,
+            PrivMode::Reserved => panic!(),
         };
         let csr_cause_address = match self.mmu.prv {
-            PrivilegeMode::Machine => Csr::Mcause,
-            PrivilegeMode::Supervisor => Csr::Scause,
-            PrivilegeMode::User => Csr::Ucause,
-            PrivilegeMode::Reserved => panic!(),
+            PrivMode::M => Csr::Mcause,
+            PrivMode::S => Csr::Scause,
+            PrivMode::U => Csr::Ucause,
+            PrivMode::Reserved => panic!(),
         };
         let csr_tval_address = match self.mmu.prv {
-            PrivilegeMode::Machine => Csr::Mtval,
-            PrivilegeMode::Supervisor => Csr::Stval,
-            PrivilegeMode::User => Csr::Utval,
-            PrivilegeMode::Reserved => panic!(),
+            PrivMode::M => Csr::Mtval,
+            PrivMode::S => Csr::Stval,
+            PrivMode::U => Csr::Utval,
+            PrivMode::Reserved => panic!(),
         };
         let csr_tvec_address = match self.mmu.prv {
-            PrivilegeMode::Machine => Csr::Mtvec,
-            PrivilegeMode::Supervisor => Csr::Stvec,
-            PrivilegeMode::User => Csr::Utvec,
-            PrivilegeMode::Reserved => panic!(),
+            PrivMode::M => Csr::Mtvec,
+            PrivMode::S => Csr::Stvec,
+            PrivMode::U => Csr::Utvec,
+            PrivMode::Reserved => panic!(),
         };
 
         self.write_csr_raw(csr_epc_address, insn_addr as u64);
         self.write_csr_raw(csr_cause_address, cause);
-        self.write_csr_raw(csr_tval_address, trap.value as u64);
+        self.write_csr_raw(csr_tval_address, exc.tval as u64);
         self.npc = self.read_csr_raw(csr_tvec_address) as i64;
 
         // Add 4 * cause if tvec has vector type address
@@ -492,26 +447,25 @@ impl Cpu {
         }
 
         match self.mmu.prv {
-            PrivilegeMode::Machine => {
+            PrivMode::M => {
                 let status = self.read_csr_raw(Csr::Mstatus);
                 let mie = (status >> 3) & 1;
                 // clear MIE[3], override MPIE[7] with MIE[3], override MPP[12:11] with current privilege encoding
-                let new_status =
-                    (status & !0x1888) | (mie << 7) | (current_privilege_encoding << 11);
+                let new_status = (status & !0x1888) | (mie << 7) | (current_priv_encoding << 11);
                 self.write_csr_raw(Csr::Mstatus, new_status);
             }
-            PrivilegeMode::Supervisor => {
+            PrivMode::S => {
                 let status = self.read_csr_raw(Csr::Sstatus);
                 let sie = (status >> 1) & 1;
                 // clear SIE[1], override SPIE[5] with SIE[1], override SPP[8] with current privilege encoding
                 let new_status =
-                    (status & !0x122) | (sie << 5) | ((current_privilege_encoding & 1) << 8);
+                    (status & !0x122) | (sie << 5) | ((current_priv_encoding & 1) << 8);
                 self.write_csr_raw(Csr::Sstatus, new_status);
             }
-            PrivilegeMode::User => {
+            PrivMode::U => {
                 panic!("Not implemented yet");
             }
-            PrivilegeMode::Reserved => panic!(), // shouldn't happen
+            PrivMode::Reserved => panic!(), // shouldn't happen
         }
         true
     }
@@ -525,7 +479,7 @@ impl Cpu {
         }
 
         let privilege = (csrno >> 8) & 3;
-        if privilege as u8 > get_privilege_encoding(self.mmu.prv) {
+        if privilege as u8 > get_priv_encoding(self.mmu.prv) {
             log::warn!("** {:016x}: Lacking priviledge for {csr:?}", self.pc);
             return None;
         }
@@ -536,12 +490,12 @@ impl Cpu {
     // XXX This is still so far from complete; copy the logic from Dromajo and review
     // each CSR.  Do Not Blanket allow reads and writes from unsupported CSRs
     #[allow(clippy::cast_sign_loss)]
-    fn read_csr(&self, csrno: u16) -> Result<u64, Trap> {
-        use PrivilegeMode::Supervisor;
+    fn read_csr(&self, csrno: u16) -> Result<u64, Exception> {
+        use PrivMode::S;
 
-        let illegal = Err(Trap {
-            trap_type: TrapType::IllegalInstruction,
-            value: i64::from(self.insn), // XXX we could assign this outside, eliminating the need for self.insn here
+        let illegal = Err(Exception {
+            trap: Trap::IllegalInstruction,
+            tval: i64::from(self.insn), // XXX we could assign this outside, eliminating the need for self.insn here
         });
 
         let Some(csr) = self.has_csr_access_privilege(csrno) else {
@@ -549,35 +503,28 @@ impl Cpu {
         };
 
         match csr {
-            Csr::Fflags | Csr::Frm | Csr::Fcsr => {
-                self.check_float_access(0)?;
-            }
-            // SATP access in S requires TVM = 0
+            Csr::Fflags | Csr::Frm | Csr::Fcsr => self.check_float_access(0)?,
             Csr::Satp => {
-                if self.mmu.prv == Supervisor && self.mmu.mstatus & MSTATUS_TVM != 0 {
+                if self.mmu.prv == S && self.mmu.mstatus & MSTATUS_TVM != 0 {
                     return illegal;
                 }
             }
-
             _ => {}
         }
         Ok(self.read_csr_raw(csr))
     }
 
     #[allow(clippy::cast_sign_loss)]
-    fn write_csr(&mut self, csrno: u16, mut value: u64) -> Result<(), Trap> {
-        use PrivilegeMode::Supervisor;
-
-        let illegal = Err(Trap {
-            trap_type: TrapType::IllegalInstruction,
-            value: i64::from(self.insn), // XXX we could assign this outside, eliminating the need for self.insn here
+    fn write_csr(&mut self, csrno: u16, mut value: u64) -> Result<(), Exception> {
+        let illegal = Err(Exception {
+            trap: Trap::IllegalInstruction,
+            tval: i64::from(self.insn), // XXX we could assign this outside, eliminating the need for self.insn here
         });
 
         let Some(csr) = self.has_csr_access_privilege(csrno) else {
             return illegal;
         };
 
-        // Checking writability fails some tests so disabling so far
         if (csrno >> 10) & 3 == 3 {
             log::warn!("Write attempted to Read Only CSR {csrno:03x}");
             return illegal;
@@ -588,19 +535,13 @@ impl Cpu {
                 let mask = MSTATUS_MASK & !(MSTATUS_VS | MSTATUS_UXL_MASK | MSTATUS_SXL_MASK);
                 value = value & mask | self.mmu.mstatus & !mask;
             }
-
-            Csr::Fflags | Csr::Frm | Csr::Fcsr => {
-                self.check_float_access(0)?;
-            }
-
+            Csr::Fflags | Csr::Frm | Csr::Fcsr => self.check_float_access(0)?,
             Csr::Cycle => {
                 log::info!("** deny cycle writing from {:016x}", self.pc);
                 return illegal;
             }
-
-            // SATP access in S requires TVM = 0
             Csr::Satp => {
-                if self.mmu.prv == Supervisor && self.mmu.mstatus & MSTATUS_TVM != 0 {
+                if self.mmu.prv == PrivMode::S && self.mmu.mstatus & MSTATUS_TVM != 0 {
                     return illegal;
                 }
 
@@ -893,11 +834,12 @@ impl Cpu {
             .translate_address(va as u64, access, side_effect_free)
         {
             Ok(pa) => pa as i64,
-            Err(trap) if !side_effect_free => {
-                self.handle_exception(&trap);
+            Err(trap) => {
+                if !side_effect_free {
+                    self.handle_exception(&trap);
+                }
                 return None;
             }
-            _ => return None,
         };
 
         let Ok(slice) = self.mmu.memory.slice(pa, size as usize) else {
@@ -928,10 +870,10 @@ impl Cpu {
         size: i64,
         side_effect_free: bool,
     ) -> Option<i64> {
-        let trap_type = match access {
-            Read => TrapType::LoadAccessFault,
-            Write => TrapType::StoreAccessFault,
-            Execute => TrapType::InstructionAccessFault,
+        let trap = match access {
+            Read => Trap::LoadAccessFault,
+            Write => Trap::StoreAccessFault,
+            Execute => Trap::InstructionAccessFault,
         };
 
         let mut r: u64 = 0;
@@ -955,26 +897,19 @@ impl Cpu {
                 }
             } else {
                 if side_effect_free {
-                    // XXX todo!("Improve logging of disassembly access errors.  We are trying to {access:?} {size} bytes @ {va:016x}");
                     return None;
                 }
 
                 match access {
                     Write => {
                         let Ok(()) = self.mmu.store_mmio_u8(pa as i64, v as u8) else {
-                            self.handle_exception(&Trap {
-                                trap_type,
-                                value: va + 1,
-                            });
+                            self.handle_exception(&Exception { trap, tval: va + 1 });
                             return None;
                         };
                     }
                     Read | Execute => {
                         let Ok(w) = self.mmu.load_mmio_u8(pa) else {
-                            self.handle_exception(&Trap {
-                                trap_type,
-                                value: va + 1,
-                            });
+                            self.handle_exception(&Exception { trap, tval: va + 1 });
                             return None;
                         };
                         b = w;
@@ -984,7 +919,7 @@ impl Cpu {
             r |= u64::from(b) << (i * 8);
             v >>= 8;
         }
-        if matches!(access, Write) {
+        if access == Write {
             None
         } else {
             Some(r as i64)
@@ -1006,7 +941,7 @@ struct Instruction {
     mask: u32,
     data: u32, // @TODO: rename
     name: &'static str,
-    operation: fn(cpu: &mut Cpu, address: i64, word: u32) -> Result<(), Trap>,
+    operation: fn(cpu: &mut Cpu, address: i64, word: u32) -> Result<(), Exception>,
     disassemble: fn(s: &mut String, cpu: &Cpu, address: i64, word: u32, evaluate: bool) -> usize,
 }
 
@@ -1143,6 +1078,7 @@ const fn parse_format_i(word: u32) -> FormatI {
         rd: ((word >> 7) & 0x1f) as usize,   // [11:7]
         rs1: ((word >> 15) & 0x1f) as usize, // [19:15]
         imm: (
+            // XXX fix this mess
             match word & 0x8000_0000 {
                 // imm[31:11] = [31]
                 0x8000_0000 => 0xffff_f800,
@@ -1306,6 +1242,7 @@ const fn parse_format_s(word: u32) -> FormatS {
         rs1: ((word >> 15) & 0x1f) as usize, // [19:15]
         rs2: ((word >> 20) & 0x1f) as usize, // [24:20]
         imm: (
+            // XXX fix this mess
             match word & 0x80000000 {
                                 0x80000000 => 0xfffff000,
                                 _ => 0
@@ -1862,14 +1799,14 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "ECALL",
         operation: |cpu, address, _word| {
             let trap_type = match cpu.mmu.prv {
-                PrivilegeMode::User => TrapType::EnvironmentCallFromUMode,
-                PrivilegeMode::Supervisor => TrapType::EnvironmentCallFromSMode,
-                PrivilegeMode::Machine => TrapType::EnvironmentCallFromMMode,
-                PrivilegeMode::Reserved => panic!("Unknown Privilege mode"),
+                PrivMode::U => Trap::EnvironmentCallFromUMode,
+                PrivMode::S => Trap::EnvironmentCallFromSMode,
+                PrivMode::M => Trap::EnvironmentCallFromMMode,
+                PrivMode::Reserved => panic!("Unknown Privilege mode"),
             };
-            Err(Trap {
-                trap_type,
-                value: address,
+            Err(Exception {
+                trap: trap_type,
+                tval: address,
             })
         },
         disassemble: dump_empty,
@@ -1882,9 +1819,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             log::info!(
                 "** Handling ebreak requires handling debug mode; reporting it as an illegal instruction **"
             );
-            Err(Trap {
-                trap_type: TrapType::IllegalInstruction,
-                value: word as i64,
+            Err(Exception {
+                trap: Trap::IllegalInstruction,
+                tval: word as i64,
             })
         },
         disassemble: dump_empty,
@@ -3679,21 +3616,20 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             let status = cpu.read_csr_raw(Csr::Mstatus);
             let mpie = (status >> 7) & 1;
             let mpp = (status >> 11) & 0x3;
-            let mprv = match get_privilege_mode(mpp) {
-                PrivilegeMode::Machine => (status >> 17) & 1,
+            let mprv = match get_priv_mode(mpp) {
+                PrivMode::M => (status >> 17) & 1,
                 _ => 0,
             };
             // Override MIE[3] with MPIE[7], set MPIE[7] to 1, set MPP[12:11] to 0
             // and override MPRV[17]
             let new_status = (status & !0x21888) | (mprv << 17) | (mpie << 3) | (1 << 7);
             cpu.write_csr_raw(Csr::Mstatus, new_status);
-            cpu.mmu.prv = match mpp {
-                0 => PrivilegeMode::User,
-                1 => PrivilegeMode::Supervisor,
-                3 => PrivilegeMode::Machine,
+            cpu.mmu.update_priv_mode(match mpp {
+                0 => PrivMode::U,
+                1 => PrivMode::S,
+                3 => PrivMode::M,
                 _ => panic!(), // Shouldn't happen
-            };
-            cpu.mmu.update_privilege_mode(cpu.mmu.prv);
+            });
             Ok(())
         },
         disassemble: dump_empty,
@@ -3705,12 +3641,12 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |cpu, _address, word| {
             // @TODO: Throw error if higher privilege return instruction is executed
 
-            if cpu.mmu.prv == PrivilegeMode::User
-                || cpu.mmu.prv == PrivilegeMode::Supervisor && cpu.mmu.mstatus & MSTATUS_TSR != 0
+            if cpu.mmu.prv == PrivMode::U
+                || cpu.mmu.prv == PrivMode::S && cpu.mmu.mstatus & MSTATUS_TSR != 0
             {
-                cpu.handle_exception(&Trap {
-                    trap_type: TrapType::IllegalInstruction,
-                    value: word as i64,
+                cpu.handle_exception(&Exception {
+                    trap: Trap::IllegalInstruction,
+                    tval: word as i64,
                 });
                 return Ok(());
             }
@@ -3719,19 +3655,15 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             let status = cpu.read_csr_raw(Csr::Sstatus);
             let spie = (status >> 5) & 1;
             let spp = (status >> 8) & 1;
-            let mprv = match get_privilege_mode(spp) {
-                PrivilegeMode::Machine => (status >> 17) & 1,
+            let mprv = match get_priv_mode(spp) {
+                PrivMode::M => (status >> 17) & 1,
                 _ => 0,
             };
             // Override SIE[1] with SPIE[5], set SPIE[5] to 1, set SPP[8] to 0,
             // and override MPRV[17]
             let new_status = (status & !0x20122) | (mprv << 17) | (spie << 1) | (1 << 5);
             cpu.write_csr_raw(Csr::Sstatus, new_status);
-            cpu.mmu.prv = match spp {
-                0 => PrivilegeMode::User,
-                1 => PrivilegeMode::Supervisor,
-                _ => panic!(), // Shouldn't happen
-            };
+            cpu.mmu.prv = if spp == 0 { PrivMode::U } else { PrivMode::S };
             cpu.mmu.clear_page_cache();
             Ok(())
         },
@@ -3742,12 +3674,12 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         data: 0x12000073,
         name: "SFENCE.VMA",
         operation: |cpu, _address, word| {
-            if cpu.mmu.prv == PrivilegeMode::User
-                || cpu.mmu.prv == PrivilegeMode::Supervisor && cpu.mmu.mstatus & MSTATUS_TVM != 0
+            if cpu.mmu.prv == PrivMode::U
+                || cpu.mmu.prv == PrivMode::S && cpu.mmu.mstatus & MSTATUS_TVM != 0
             {
-                cpu.handle_exception(&Trap {
-                    trap_type: TrapType::IllegalInstruction,
-                    value: word as i64,
+                cpu.handle_exception(&Exception {
+                    trap: Trap::IllegalInstruction,
+                    tval: word as i64,
                 });
             } else {
                 /*
@@ -3776,13 +3708,12 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
              * time limit, the WFI instruction causes an illegal
              * instruction trap."
              */
-            if matches!(cpu.mmu.prv, PrivilegeMode::User)
-                || matches!(cpu.mmu.prv, PrivilegeMode::Supervisor)
-                    && cpu.read_csr_raw(Csr::Mstatus) & MSTATUS_TW != 0
+            if cpu.mmu.prv == PrivMode::U
+                || cpu.mmu.prv == PrivMode::S && cpu.mmu.mstatus & MSTATUS_TW != 0
             {
-                cpu.handle_exception(&Trap {
-                    trap_type: TrapType::IllegalInstruction,
-                    value: word as i64,
+                cpu.handle_exception(&Exception {
+                    trap: Trap::IllegalInstruction,
+                    tval: word as i64,
                 });
             } else {
                 cpu.wfi = true;
@@ -3930,9 +3861,9 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         data: 0,
         name: "INVALID",
         operation: |_address, _word, _cpu| {
-            Err(Trap {
-                trap_type: TrapType::IllegalInstruction,
-                value: 0,
+            Err(Exception {
+                trap: Trap::IllegalInstruction,
+                tval: 0,
             })
         },
         disassemble: dump_empty,
