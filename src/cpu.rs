@@ -691,7 +691,7 @@ impl Cpu {
     #[allow(clippy::cast_sign_loss)]
     pub fn disassemble(&mut self, s: &mut String) -> usize {
         let Some(word32) = self.memop_disass(self.npc) else {
-            let _ = write!(s, "<inaccessible>");
+            let _ = write!(s, "{:016x} <inaccessible>", self.npc);
             return 0;
         };
         self.disassemble_insn(s, self.npc, (word32 & 0xFFFFFFFF) as u32, true)
