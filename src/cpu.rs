@@ -35,7 +35,6 @@ pub struct Cpu {
     fs: u8,
 
     // .. adding Supervisor and CSR
-    prv: PrivilegeMode,
     pub cycle: u64,
     csr: Box<[u64]>, // XXX this should be replaced with individual registers
     reservation: Option<u64>,
@@ -158,7 +157,6 @@ impl Cpu {
 
             seqno: 0,
             cycle: 0,
-            prv: PrivilegeMode::Machine,
             wfi: false,
             npc: 0,
             pc: 0,
@@ -326,7 +324,7 @@ impl Cpu {
     #[allow(clippy::similar_names, clippy::too_many_lines)]
     #[allow(clippy::cast_sign_loss)]
     fn handle_trap(&mut self, trap: &Trap, insn_addr: i64, is_interrupt: bool) -> bool {
-        let current_privilege_encoding = u64::from(get_privilege_encoding(self.prv));
+        let current_privilege_encoding = u64::from(get_privilege_encoding(self.mmu.prv));
         let cause = get_trap_cause(trap);
 
         // First, determine which privilege mode should handle the trap.
@@ -352,7 +350,7 @@ impl Cpu {
         };
         let new_privilege_encoding = u64::from(get_privilege_encoding(new_privilege_mode));
 
-        let current_status = match self.prv {
+        let current_status = match self.mmu.prv {
             PrivilegeMode::Machine => self.read_csr_raw(Csr::Mstatus),
             PrivilegeMode::Supervisor => self.read_csr_raw(Csr::Sstatus),
             PrivilegeMode::User => self.read_csr_raw(Csr::Ustatus),
@@ -394,7 +392,7 @@ impl Cpu {
 
             if new_privilege_encoding < current_privilege_encoding
                 || current_privilege_encoding == new_privilege_encoding
-                    && 0 == match self.prv {
+                    && 0 == match self.mmu.prv {
                         PrivilegeMode::Machine => current_mie,
                         PrivilegeMode::Supervisor => current_sie,
                         PrivilegeMode::User => current_uie,
@@ -459,27 +457,27 @@ impl Cpu {
 
         // So, this trap should be taken
 
-        self.prv = new_privilege_mode;
-        self.mmu.update_privilege_mode(self.prv);
-        let csr_epc_address = match self.prv {
+        self.mmu.prv = new_privilege_mode;
+        self.mmu.update_privilege_mode(self.mmu.prv);
+        let csr_epc_address = match self.mmu.prv {
             PrivilegeMode::Machine => Csr::Mepc,
             PrivilegeMode::Supervisor => Csr::Sepc,
             PrivilegeMode::User => Csr::Uepc,
             PrivilegeMode::Reserved => panic!(),
         };
-        let csr_cause_address = match self.prv {
+        let csr_cause_address = match self.mmu.prv {
             PrivilegeMode::Machine => Csr::Mcause,
             PrivilegeMode::Supervisor => Csr::Scause,
             PrivilegeMode::User => Csr::Ucause,
             PrivilegeMode::Reserved => panic!(),
         };
-        let csr_tval_address = match self.prv {
+        let csr_tval_address = match self.mmu.prv {
             PrivilegeMode::Machine => Csr::Mtval,
             PrivilegeMode::Supervisor => Csr::Stval,
             PrivilegeMode::User => Csr::Utval,
             PrivilegeMode::Reserved => panic!(),
         };
-        let csr_tvec_address = match self.prv {
+        let csr_tvec_address = match self.mmu.prv {
             PrivilegeMode::Machine => Csr::Mtvec,
             PrivilegeMode::Supervisor => Csr::Stvec,
             PrivilegeMode::User => Csr::Utvec,
@@ -496,7 +494,7 @@ impl Cpu {
             self.npc = (self.npc & !3) + 4 * (cause as i64 & 0xffff);
         }
 
-        match self.prv {
+        match self.mmu.prv {
             PrivilegeMode::Machine => {
                 let status = self.read_csr_raw(Csr::Mstatus);
                 let mie = (status >> 3) & 1;
@@ -530,7 +528,7 @@ impl Cpu {
         }
 
         let privilege = (csrno >> 8) & 3;
-        if privilege as u8 > get_privilege_encoding(self.prv) {
+        if privilege as u8 > get_privilege_encoding(self.mmu.prv) {
             log::warn!("** {:016x}: Lacking priviledge for {csr:?}", self.pc);
             return None;
         }
@@ -559,7 +557,8 @@ impl Cpu {
             }
             // SATP access in S requires TVM = 0
             Csr::Satp => {
-                if self.prv == Supervisor && self.csr[Csr::Mstatus as usize] & MSTATUS_TVM != 0 {
+                if self.mmu.prv == Supervisor && self.csr[Csr::Mstatus as usize] & MSTATUS_TVM != 0
+                {
                     return illegal;
                 }
             }
@@ -594,7 +593,8 @@ impl Cpu {
 
             // SATP access in S requires TVM = 0
             Csr::Satp => {
-                if self.prv == Supervisor && self.csr[Csr::Mstatus as usize] & MSTATUS_TVM != 0 {
+                if self.mmu.prv == Supervisor && self.csr[Csr::Mstatus as usize] & MSTATUS_TVM != 0
+                {
                     return illegal;
                 }
             }
@@ -1876,7 +1876,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         data: 0x00000073,
         name: "ECALL",
         operation: |cpu, address, _word| {
-            let trap_type = match cpu.prv {
+            let trap_type = match cpu.mmu.prv {
                 PrivilegeMode::User => TrapType::EnvironmentCallFromUMode,
                 PrivilegeMode::Supervisor => TrapType::EnvironmentCallFromSMode,
                 PrivilegeMode::Machine => TrapType::EnvironmentCallFromMMode,
@@ -3702,13 +3702,13 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             // and override MPRV[17]
             let new_status = (status & !0x21888) | (mprv << 17) | (mpie << 3) | (1 << 7);
             cpu.write_csr_raw(Csr::Mstatus, new_status);
-            cpu.prv = match mpp {
+            cpu.mmu.prv = match mpp {
                 0 => PrivilegeMode::User,
                 1 => PrivilegeMode::Supervisor,
                 3 => PrivilegeMode::Machine,
                 _ => panic!(), // Shouldn't happen
             };
-            cpu.mmu.update_privilege_mode(cpu.prv);
+            cpu.mmu.update_privilege_mode(cpu.mmu.prv);
             Ok(())
         },
         disassemble: dump_empty,
@@ -3720,8 +3720,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |cpu, _address, word| {
             // @TODO: Throw error if higher privilege return instruction is executed
 
-            if cpu.prv == PrivilegeMode::User
-                || cpu.prv == PrivilegeMode::Supervisor
+            if cpu.mmu.prv == PrivilegeMode::User
+                || cpu.mmu.prv == PrivilegeMode::Supervisor
                     && cpu.csr[Csr::Mstatus as usize] & MSTATUS_TSR != 0
             {
                 cpu.handle_exception(&Trap {
@@ -3743,12 +3743,12 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             // and override MPRV[17]
             let new_status = (status & !0x20122) | (mprv << 17) | (spie << 1) | (1 << 5);
             cpu.write_csr_raw(Csr::Sstatus, new_status);
-            cpu.prv = match spp {
+            cpu.mmu.prv = match spp {
                 0 => PrivilegeMode::User,
                 1 => PrivilegeMode::Supervisor,
                 _ => panic!(), // Shouldn't happen
             };
-            cpu.mmu.update_privilege_mode(cpu.prv);
+            cpu.mmu.update_privilege_mode(cpu.mmu.prv);
             Ok(())
         },
         disassemble: dump_empty,
@@ -3758,8 +3758,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         data: 0x12000073,
         name: "SFENCE.VMA",
         operation: |cpu, _address, word| {
-            if cpu.prv == PrivilegeMode::User
-                || cpu.prv == PrivilegeMode::Supervisor
+            if cpu.mmu.prv == PrivilegeMode::User
+                || cpu.mmu.prv == PrivilegeMode::Supervisor
                     && cpu.csr[Csr::Mstatus as usize] & MSTATUS_TVM != 0
             {
                 cpu.handle_exception(&Trap {
@@ -3793,8 +3793,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
              * time limit, the WFI instruction causes an illegal
              * instruction trap."
              */
-            if matches!(cpu.prv, PrivilegeMode::User)
-                || matches!(cpu.prv, PrivilegeMode::Supervisor)
+            if matches!(cpu.mmu.prv, PrivilegeMode::User)
+                || matches!(cpu.mmu.prv, PrivilegeMode::Supervisor)
                     && cpu.read_csr_raw(Csr::Mstatus) & MSTATUS_TW != 0
             {
                 cpu.handle_exception(&Trap {
