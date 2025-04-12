@@ -24,11 +24,11 @@ const DTB_SIZE: usize = 0xfe0;
 /// It may also be said Bus.
 /// @TODO: Memory protection is not implemented yet. We should support.
 pub struct Mmu {
-    pub mip: u64,  // CSR, but we keep it here for easy sharing
+    pub mip: u64, // CSR, but we keep it here for easy sharing
     pub memory: Memory,
-    ppn: u64,                         // XXX Badly named root pointer; redundant
-    addressing_mode: AddressingMode,  // XXX Redundantly derived from CSR
-    privilege_mode: PrivilegeMode,    // XXX Redundant with CPU state
+    ppn: u64,                        // XXX Badly named root pointer; redundant
+    addressing_mode: AddressingMode, // XXX Redundantly derived from CSR
+    privilege_mode: PrivilegeMode,   // XXX Redundant with CPU state
     dtb: Vec<u8>,
     disk: VirtioBlockDisk,
     plic: Plic,
@@ -37,7 +37,7 @@ pub struct Mmu {
 
     /// Address translation can be affected `mstatus` (MPRV, MPP in machine mode)
     /// then `Mmu` has copy of it.
-    mstatus: u64,                     // XXX More redundant ("2 problems in CS...")
+    mstatus: u64, // XXX More redundant ("2 problems in CS...")
 
     /// Address translation page cache. Experimental feature.
     /// The cache is cleared when translation mapping can be changed;
@@ -623,7 +623,11 @@ impl Mmu {
         Ok(pa)
     }
 
-    #[allow(clippy::cast_possible_wrap)]
+    #[allow(
+        clippy::cast_possible_wrap,
+        clippy::too_many_lines,
+        clippy::cognitive_complexity
+    )]
     fn translate_address_slow(
         &mut self,
         va: u64,

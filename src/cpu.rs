@@ -22,7 +22,8 @@ pub const CONFIG_SW_MANAGED_A_AND_D: bool = false;
 pub const PG_SHIFT: usize = 12; // 4K page size
 
 /// Emulates a RISC-V CPU core
-pub struct Cpu {  // XXX Better as "RISCVCpu", "CPUState", "State"?
+pub struct Cpu {
+    // XXX Better as "RISCVCpu", "CPUState", "State"?
     // This is the essential RISC-V CPU state
     npc: i64,
     x: [i64; 32],
@@ -32,29 +33,27 @@ pub struct Cpu {  // XXX Better as "RISCVCpu", "CPUState", "State"?
     frm_: RoundingMode,
     fflags_: u8,
     fs: u8,
-    
+
     // .. adding Supervisor and CSR
     prv: PrivilegeMode,
     pub cycle: u64,
     csr: Box<[u64]>, // XXX this should be replaced with individual registers
     reservation: Option<u64>,
-    
+
     // The rest is just conveniences
-    wfi: bool,      // Wait-For-Interrupt; relax and await further instruction
+    wfi: bool, // Wait-For-Interrupt; relax and await further instruction
 
     pub seqno: usize, // Important for sanity: uniquely name each executed insn
-                      // You can derive instret from this except sane people
-                      // could consider ECALL and EBREAK as committing.
-                    
-    pub pc: i64,   // XXX As we found, we don't actually need to keep this in the
+    // You can derive instret from this except sane people
+    // could consider ECALL and EBREAK as committing.
+    pub pc: i64, // XXX As we found, we don't actually need to keep this in the
     // state!
     pub insn: u32, // This is the original original bytes, prior to decompression
     // XXX As we found, we don't actually need to keep this in the
     // state!
+    mmu: Mmu, // Holds all memory and devices.  XXX Wait, why here?
 
-    mmu: Mmu,      // Holds all memory and devices.  XXX Wait, why here?
-
-    decode_dag: Vec<u16>,  // Decoding table.  XXX Does it need to be here?
+    decode_dag: Vec<u16>, // Decoding table.  XXX Does it need to be here?
 }
 
 // XXX migrate to riscv.rs
@@ -62,7 +61,8 @@ pub struct Cpu {  // XXX Better as "RISCVCpu", "CPUState", "State"?
 // Alternative, could be just U, S, Resrvd, M
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug, FromPrimitive, PartialEq, Eq)]
-pub enum PrivilegeMode { // XXX PrivMode?
+pub enum PrivilegeMode {
+    // XXX PrivMode?
     User,
     Supervisor,
     Reserved,
@@ -70,14 +70,15 @@ pub enum PrivilegeMode { // XXX PrivMode?
 }
 
 #[derive(Debug)]
-pub struct Trap { // XXX rename Exception?
+pub struct Trap {
+    // XXX rename Exception?
     pub trap_type: TrapType,
     pub value: i64, // Trap type specific value (tval) XXX Rename
 }
 
-
 #[derive(Clone, Copy, Debug, FromPrimitive)]
-pub enum TrapType { // XXX Rename Trap?
+pub enum TrapType {
+    // XXX Rename Trap?
     InstructionAddressMisaligned = 0,
     InstructionAccessFault,
     IllegalInstruction,
@@ -215,7 +216,7 @@ impl Cpu {
         if self.fs == 0 || rm == 5 || rm == 6 {
             Err(Trap {
                 trap_type: TrapType::IllegalInstruction,
-                value: i64::from(self.insn),  // XXX we could assign this outside, eliminating the need for self.insn here
+                value: i64::from(self.insn), // XXX we could assign this outside, eliminating the need for self.insn here
             })
         } else {
             Ok(())
@@ -248,8 +249,9 @@ impl Cpu {
 
     // It's here, the One Key Function.  This is where it all happens!
     #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-    fn run_cpu_tick(&mut self) { // XXX Yeah we should rename that.   How about fetch-and-execute? or cpu-step?
-                                // and it should have return types Result<(), Exception>
+    fn run_cpu_tick(&mut self) {
+        // XXX Yeah we should rename that.   How about fetch-and-execute? or cpu-step?
+        // and it should have return types Result<(), Exception>
         self.cycle = self.cycle.wrapping_add(1);
         if self.wfi {
             if self.mmu.mip & self.read_csr_raw(Csr::Mie) != 0 {
@@ -315,8 +317,9 @@ impl Cpu {
         }
     }
 
-    fn handle_exception(&mut self, exception: &Trap) { // XXX If we pass in the address we don't need 
-    // self.pc, but that requires us to call handle exception from a centrol location with access to the pc.
+    fn handle_exception(&mut self, exception: &Trap) {
+        // XXX If we pass in the address we don't need
+        // self.pc, but that requires us to call handle exception from a centrol location with access to the pc.
         self.handle_trap(exception, self.pc, false);
     }
 
@@ -522,7 +525,7 @@ impl Cpu {
         let csr = FromPrimitive::from_u16(csrno)?;
 
         if !csr::legal(csr) {
-            log::warn!("** {:016x}: {csr:?} isn't implemented", self.pc);  // XXX Ok, fine, it's useful for debugging but ....
+            log::warn!("** {:016x}: {csr:?} isn't implemented", self.pc); // XXX Ok, fine, it's useful for debugging but ....
             return None;
         }
 
