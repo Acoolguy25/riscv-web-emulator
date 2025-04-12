@@ -11,7 +11,10 @@ use crate::device::virtio_block_disk::VirtioBlockDisk;
 pub use crate::memory::*;
 use crate::terminal::Terminal;
 use fnv::FnvHashMap;
+use log::trace;
+use log::warn;
 use num_traits::FromPrimitive;
+
 const DTB_SIZE: usize = 0xfe0;
 
 /// Emulates Memory Management Unit. It holds the Main memory and peripheral
@@ -21,11 +24,11 @@ const DTB_SIZE: usize = 0xfe0;
 /// It may also be said Bus.
 /// @TODO: Memory protection is not implemented yet. We should support.
 pub struct Mmu {
-    pub mip: u64, // We keep it here for easy sharing
+    pub mip: u64,  // CSR, but we keep it here for easy sharing
     pub memory: Memory,
-    ppn: u64,
-    addressing_mode: AddressingMode,
-    privilege_mode: PrivilegeMode,
+    ppn: u64,                         // XXX Badly named root pointer; redundant
+    addressing_mode: AddressingMode,  // XXX Redundantly derived from CSR
+    privilege_mode: PrivilegeMode,    // XXX Redundant with CPU state
     dtb: Vec<u8>,
     disk: VirtioBlockDisk,
     plic: Plic,
@@ -34,7 +37,7 @@ pub struct Mmu {
 
     /// Address translation can be affected `mstatus` (MPRV, MPP in machine mode)
     /// then `Mmu` has copy of it.
-    mstatus: u64,
+    mstatus: u64,                     // XXX More redundant ("2 problems in CS...")
 
     /// Address translation page cache. Experimental feature.
     /// The cache is cleared when translation mapping can be changed;
@@ -627,6 +630,7 @@ impl Mmu {
         access: MemoryAccessType,
         side_effect_free: bool,
     ) -> Result<u64, Trap> {
+        let prv = self.privilege_mode;
         let effective_priv = if self.mstatus & MSTATUS_MPRV != 0
             && access != MemoryAccessType::Execute
         {
@@ -636,7 +640,7 @@ impl Mmu {
             };
             prv
         } else {
-            self.privilege_mode
+            prv
         };
 
         if matches!(effective_priv, PrivilegeMode::Machine)
@@ -683,8 +687,7 @@ impl Mmu {
             // return access_fault(address, access_type);
 
             if pte & PTE_V_MASK == 0 {
-                // XXX Debug log would be useful
-                //info!("** {:?} mode access to {address:08x} denied: invalid PTE", self.privilege_mode);
+                trace!("** {prv:?} mode access to {va:08x} denied: invalid PTE");
                 break;
             }
 
@@ -699,8 +702,7 @@ impl Mmu {
             // *** Found a leaf node ***
 
             if xwr == 2 || xwr == 6 {
-                // XXX Debug log would be useful
-                //info!("** {:?} mode access to {address:08x} denied: invalid xwr {xwr}", self.privilege_mode);
+                trace!("** {prv:?} mode access to {va:08x} denied: invalid xwr {xwr}");
                 break;
             }
 
@@ -708,12 +710,12 @@ impl Mmu {
             if effective_priv == PrivilegeMode::Supervisor {
                 if pte & PTE_U_MASK != 0 && self.mstatus & MSTATUS_SUM == 0 {
                     // XXX Debug log would be useful
-                    //info!("** {:?} mode access to {address:08x} denied: U & !SUM", self.privilege_mode);
+                    warn!("** {prv:?} mode access to {va:08x} denied: U & !SUM");
                     break;
                 }
             } else if pte & PTE_U_MASK == 0 {
                 // XXX Debug log would be useful
-                //info!("** {:?} mode access to {address:08x} denied: !U", self.privilege_mode);
+                warn!("** {prv:?} mode access to {va:08x} denied: !U");
                 return page_fault(va as i64, access);
             }
 
@@ -724,7 +726,8 @@ impl Mmu {
             }
 
             if (xwr >> access_shift) & 1 == 0 {
-                //info!("** {:?} mode access to {address:08x} denied: want {access_shift}, got {xwr}", self.privilege_mode);
+                let want = 1 << access_shift;
+                trace!("** {prv:?} mode access to {va:08x} denied: want {want}, got {xwr}");
                 break;
             }
 
@@ -732,7 +735,7 @@ impl Mmu {
             let ppn = pte >> 10;
             let j = levels - 1 - i;
             if ((1 << j) - 1) & ppn != 0 {
-                //info!("** {:?} mode access to {address:08x} denied: misaligned superpage {i} / {ppn}", self.privilege_mode);
+                warn!("** access to {va:08x} denied: misaligned superpage {i} / {ppn}");
                 break;
             }
 
@@ -744,11 +747,11 @@ impl Mmu {
             */
             if CONFIG_SW_MANAGED_A_AND_D {
                 if pte & PTE_A_MASK == 0 {
-                    //info!("** {:?} mode access to {address:08x} denied: missing A", self.privilege_mode);
+                    trace!("** {prv:?} mode access to {va:08x} denied: missing A");
                     break; // Must have A on access
                 }
                 if access == MemoryAccessType::Write && pte & PTE_D_MASK == 0 {
-                    //info!("** {:?} mode access to {address:08x} denied: missing D", self.privilege_mode);
+                    trace!("** {prv:?} mode access to {va:08x} denied: missing D");
                     break; // Must have D on write
                 }
             } else {

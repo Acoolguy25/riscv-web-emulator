@@ -48,6 +48,12 @@
 
 ## Code Simplicify
 
+- Distributing the calls to `handle_exception` was a mistake.  Whatever
+  trivial perf benefit there might have been, there's tremendous simplicity
+  in always returning the exception and letting the top-level fetch-decode- execute function (`run_cpu_tick()`) handle it.  For one it eliminates the need
+  for the gross insn_addr/insn pair (or whether it's currently called).
+
+
 - ONGOING: keep all values i64; it's the natural type for the
   registers and keeping all 64-bit values i64 means less casting
   around.  However we have to be careful about right shifts and

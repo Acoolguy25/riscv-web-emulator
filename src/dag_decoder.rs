@@ -49,7 +49,7 @@ impl DecoderTree {
                         }
                     }
 
-                    log::info!(
+                    log::trace!(
                         "** We appear to have found a match at {i}, saving {} entries!",
                         insns.len() + 2
                     );
