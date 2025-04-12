@@ -4,6 +4,7 @@ use crate::cpu::{
     CONFIG_SW_MANAGED_A_AND_D, MSTATUS_MPP_SHIFT, MSTATUS_MPRV, MSTATUS_MXR, MSTATUS_SUM, PG_SHIFT,
     PrivilegeMode, Trap, TrapType,
 };
+use crate::csr::{SATP_MODE_MASK, SATP_MODE_SHIFT, SATP_PPN_MASK, SATP_PPN_SHIFT, SatpMode};
 use crate::device::clint::Clint;
 use crate::device::plic::Plic;
 use crate::device::uart::Uart;
@@ -29,8 +30,6 @@ pub struct Mmu {
     pub mstatus: u64,
     pub mip: u64,
     pub satp: u64,
-    page_table_root: u64,            // XXX Redundant
-    addressing_mode: AddressingMode, // XXX Redundantly derived from CSR
 
     pub memory: Memory,
     dtb: Vec<u8>,
@@ -54,13 +53,6 @@ pub struct Mmu {
     fetch_page_cache: FnvHashMap<u64, u64>,
     load_page_cache: FnvHashMap<u64, u64>,
     store_page_cache: FnvHashMap<u64, u64>,
-}
-
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub enum AddressingMode {
-    None,
-    SV39,
-    SV48, // @TODO: Implement
 }
 
 // XXX Shouldn't this be in cpu.rs?
@@ -95,8 +87,6 @@ impl Mmu {
             mstatus: 0,
             mip: 0,
             satp: 0,
-            page_table_root: 0,
-            addressing_mode: AddressingMode::None,
             memory: Memory::new(),
             dtb,
             disk: VirtioBlockDisk::new(),
@@ -147,7 +137,7 @@ impl Mmu {
     }
 
     /// Clears page cache entries
-    fn clear_page_cache(&mut self) {
+    pub fn clear_page_cache(&mut self) {
         self.fetch_page_cache.clear();
         self.load_page_cache.clear();
         self.store_page_cache.clear();
@@ -165,30 +155,12 @@ impl Mmu {
         );
     }
 
-    /// Updates addressing mode
-    ///
-    /// # Arguments
-    /// * `new_addressing_mode`
-    pub fn update_addressing_mode(&mut self, new_addressing_mode: AddressingMode) {
-        self.addressing_mode = new_addressing_mode;
-        self.clear_page_cache();
-    }
-
     /// Updates privilege mode
     ///
     /// # Arguments
     /// * `mode`
     pub fn update_privilege_mode(&mut self, mode: PrivilegeMode) {
         self.prv = mode;
-        self.clear_page_cache();
-    }
-
-    /// Updates PPN used for address translation
-    ///
-    /// # Arguments
-    /// * `ppn`
-    pub fn update_ppn(&mut self, ppn: u64) {
-        self.page_table_root = ppn;
         self.clear_page_cache();
     }
 
@@ -639,19 +611,14 @@ impl Mmu {
             prv
         };
 
-        if matches!(effective_priv, PrivilegeMode::Machine)
-            || matches!(self.addressing_mode, AddressingMode::None)
+        let satp_mode = ((self.satp >> SATP_MODE_SHIFT) & SATP_MODE_MASK) as usize;
+        if matches!(effective_priv, PrivilegeMode::Machine) || satp_mode == SatpMode::Bare as usize
         {
             return Ok(va);
         }
 
         // Sv39 (Sv48 in future)
-        let levels = match self.addressing_mode {
-            AddressingMode::SV39 => 3,
-            AddressingMode::SV48 => 4,
-            AddressingMode::None => unreachable!(),
-        };
-
+        let levels = 3 + satp_mode - SatpMode::Sv39 as usize;
         let access_shift = match access {
             MemoryAccessType::Read => 0,
             MemoryAccessType::Write => 1,
@@ -666,7 +633,8 @@ impl Mmu {
             return page_fault(va as i64, access);
         }
         let pte_addr_bits = 44;
-        let mut pte_addr = (self.page_table_root & ((1 << pte_addr_bits) - 1)) << PG_SHIFT;
+        let page_table_root = (self.satp >> SATP_PPN_SHIFT) & SATP_PPN_MASK;
+        let mut pte_addr = (page_table_root & ((1 << pte_addr_bits) - 1)) << PG_SHIFT;
         let pte_bits = 12 - pte_size_log2;
         let pte_mask = (1 << pte_bits) - 1;
 

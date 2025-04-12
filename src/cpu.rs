@@ -8,7 +8,7 @@ use crate::fp::{
     RoundingMode, Sf, Sf32, Sf64, cvt_i32_sf32, cvt_i64_sf32, cvt_u32_sf32, cvt_u64_sf32,
 };
 use crate::mmu::MemoryAccessType::{Execute, Read, Write};
-use crate::mmu::{AddressingMode, MemoryAccessType, Mmu};
+use crate::mmu::{MemoryAccessType, Mmu};
 use crate::rvc;
 use crate::terminal::Terminal;
 pub use csr::*;
@@ -23,8 +23,6 @@ pub const PG_SHIFT: usize = 12; // 4K page size
 
 /// Emulates a RISC-V CPU core
 pub struct Cpu {
-    // XXX Better as "RISCVCpu", "CPUState", "State"?
-    // This is the essential RISC-V CPU state
     npc: i64,
     x: [i64; 32],
 
@@ -50,9 +48,9 @@ pub struct Cpu {
     pub insn: u32, // This is the original original bytes, prior to decompression
     // XXX As we found, we don't actually need to keep this in the
     // state!
-    mmu: Mmu, // Holds all memory and devices.  XXX Wait, why here?
+    mmu: Mmu, // Holds all memory and devices
 
-    decode_dag: Vec<u16>, // Decoding table.  XXX Does it need to be here?
+    decode_dag: Vec<u16>, // Decoding table
 }
 
 // XXX migrate to riscv.rs
@@ -579,6 +577,12 @@ impl Cpu {
             return illegal;
         };
 
+        // Checking writability fails some tests so disabling so far
+        if (csrno >> 10) & 3 == 3 {
+            log::warn!("Write attempted to Read Only CSR {csrno:03x}");
+            return illegal;
+        }
+
         match csr {
             Csr::Mstatus => {
                 let mask = MSTATUS_MASK & !(MSTATUS_VS | MSTATUS_UXL_MASK | MSTATUS_SXL_MASK);
@@ -599,21 +603,17 @@ impl Cpu {
                 if self.mmu.prv == Supervisor && self.mmu.mstatus & MSTATUS_TVM != 0 {
                     return illegal;
                 }
+
+                let mode = (value >> SATP_MODE_SHIFT) & SATP_MODE_MASK;
+                if mode != 0 && mode != SatpMode::Sv39 as u64 && mode != SatpMode::Sv48 as u64 {
+                    log::warn!("Illegal SATP mode {mode:02x}");
+                    return illegal;
+                }
             }
             _ => {}
         }
 
-        /*
-        // Checking writability fails some tests so disabling so far
-        let read_only = (address >> 10) & 3 == 3;
-        if read_only {
-            return Err(Exception::IllegalInstruction);
-        }
-        */
         self.write_csr_raw(csr, value);
-        if matches!(csr, Csr::Satp) {
-            self.update_satp(value);
-        }
         Ok(())
     }
 
@@ -648,6 +648,7 @@ impl Cpu {
             Csr::Mip => self.mmu.mip,
             Csr::Time => self.mmu.get_clint().read_mtime(),
             Csr::Cycle | Csr::Mcycle | Csr::Minstret => self.cycle,
+            Csr::Satp => self.mmu.satp,
             _ => self.csr[csr as usize],
         }
     }
@@ -688,6 +689,10 @@ impl Cpu {
                 // XXX This should trap actually
                 self.mmu.get_mut_clint().write_mtime(value);
             }
+            Csr::Satp => {
+                self.mmu.satp = value;
+                self.mmu.clear_page_cache();
+            }
             /*Csr::Cycle |*/ Csr::Mcycle => self.cycle = value,
             _ => {
                 self.csr[csr as usize] = value;
@@ -713,21 +718,6 @@ impl Cpu {
 
     fn _set_fcsr_nx(&mut self) {
         self.add_to_fflags(1);
-    }
-
-    fn update_satp(&mut self, satp: u64) {
-        let satp_mode = (satp >> SATP_MODE_SHIFT) & SATP_MODE_MASK;
-        let addressing_mode = match FromPrimitive::from_u64(satp_mode) {
-            Some(SatpMode::Bare) => AddressingMode::None,
-            Some(SatpMode::Sv39) => AddressingMode::SV39,
-            Some(SatpMode::Sv48) => AddressingMode::SV48,
-            Some(SatpMode::Sv57) => todo!("Unsupported SATP mode SV57"),
-            Some(SatpMode::Sv64) => todo!("Unsupported SATP mode SV64"),
-            _ => todo!("Illegal SATP mode {satp_mode:02x}"),
-        };
-        self.mmu.update_addressing_mode(addressing_mode);
-        self.mmu
-            .update_ppn((satp >> SATP_PPN_SHIFT) & SATP_PPN_MASK);
     }
 
     /// Disassembles an instruction pointed by Program Counter and
@@ -3742,7 +3732,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
                 1 => PrivilegeMode::Supervisor,
                 _ => panic!(), // Shouldn't happen
             };
-            cpu.mmu.update_privilege_mode(cpu.mmu.prv);
+            cpu.mmu.clear_page_cache();
             Ok(())
         },
         disassemble: dump_empty,
