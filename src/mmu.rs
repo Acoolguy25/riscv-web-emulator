@@ -183,15 +183,6 @@ impl Mmu {
         self.clear_page_cache();
     }
 
-    /// Updates mstatus copy. `CPU` needs to call this method whenever
-    /// `mstatus` is updated.
-    ///
-    /// # Arguments
-    /// * `mstatus`
-    pub const fn update_mstatus(&mut self, mstatus: u64) {
-        self.mstatus = mstatus;
-    }
-
     /// Updates PPN used for address translation
     ///
     /// # Arguments

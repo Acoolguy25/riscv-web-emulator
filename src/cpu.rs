@@ -30,9 +30,9 @@ pub struct Cpu {
 
     // .. adding FP state
     f: [i64; 32],
-    frm_: RoundingMode,
-    fflags_: u8,
-    fs: u8,
+    frm_: RoundingMode, // XXX make this accessor functions on fcsr
+    fflags_: u8,        // XXX make this accessor functions on fcsr
+    fs: u8,             // XXX This is redundant and usage is suspect
 
     // .. adding Supervisor and CSR
     pub cycle: u64,
@@ -171,8 +171,7 @@ impl Cpu {
         for c in "SUIMAFDC".bytes() {
             cpu.csr[Csr::Misa as usize] |= 1 << (c as usize - 65);
         }
-        cpu.csr[Csr::Mstatus as usize] =
-            2 << MSTATUS_UXL_SHIFT | 2 << MSTATUS_SXL_SHIFT | 3 << MSTATUS_MPP_SHIFT;
+        cpu.mmu.mstatus = 2 << MSTATUS_UXL_SHIFT | 2 << MSTATUS_SXL_SHIFT | 3 << MSTATUS_MPP_SHIFT;
         cpu.x[10] = 0; // boot hart
         cpu.x[11] = 0x1020; // start of DTB (XXX could put that elsewhere);
         cpu
@@ -557,8 +556,7 @@ impl Cpu {
             }
             // SATP access in S requires TVM = 0
             Csr::Satp => {
-                if self.mmu.prv == Supervisor && self.csr[Csr::Mstatus as usize] & MSTATUS_TVM != 0
-                {
+                if self.mmu.prv == Supervisor && self.mmu.mstatus & MSTATUS_TVM != 0 {
                     return illegal;
                 }
             }
@@ -582,6 +580,11 @@ impl Cpu {
         };
 
         match csr {
+            Csr::Mstatus => {
+                let mask = MSTATUS_MASK & !(MSTATUS_VS | MSTATUS_UXL_MASK | MSTATUS_SXL_MASK);
+                value = value & mask | self.mmu.mstatus & !mask;
+            }
+
             Csr::Fflags | Csr::Frm | Csr::Fcsr => {
                 self.check_float_access(0)?;
             }
@@ -593,8 +596,7 @@ impl Cpu {
 
             // SATP access in S requires TVM = 0
             Csr::Satp => {
-                if self.mmu.prv == Supervisor && self.csr[Csr::Mstatus as usize] & MSTATUS_TVM != 0
-                {
+                if self.mmu.prv == Supervisor && self.mmu.mstatus & MSTATUS_TVM != 0 {
                     return illegal;
                 }
             }
@@ -608,11 +610,6 @@ impl Cpu {
             return Err(Exception::IllegalInstruction);
         }
         */
-        if matches!(csr, Csr::Mstatus) {
-            let mask = MSTATUS_MASK & !(MSTATUS_VS | MSTATUS_UXL_MASK | MSTATUS_SXL_MASK);
-            value = value & mask | self.csr[Csr::Mstatus as usize] & !mask;
-        }
-
         self.write_csr_raw(csr, value);
         if matches!(csr, Csr::Satp) {
             self.update_satp(value);
@@ -628,17 +625,17 @@ impl Cpu {
             Csr::Frm => self.read_frm() as u64,
             Csr::Fcsr => self.read_fcsr() as u64,
             Csr::Sstatus => {
-                let mut mstatus = self.csr[Csr::Mstatus as usize];
-                mstatus &= !MSTATUS_FS;
-                mstatus |= u64::from(self.fs) << MSTATUS_FS_SHIFT;
-                mstatus &= 0x8000_0003_000d_e162;
+                let mut sstatus = self.mmu.mstatus;
+                sstatus &= !MSTATUS_FS;
+                sstatus |= u64::from(self.fs) << MSTATUS_FS_SHIFT;
+                sstatus &= 0x8000_0003_000d_e162;
                 if self.fs == 3 {
-                    mstatus |= 1 << 63;
+                    sstatus |= 1 << 63;
                 }
-                mstatus
+                sstatus
             }
             Csr::Mstatus => {
-                let mut mstatus = self.csr[Csr::Mstatus as usize];
+                let mut mstatus = self.mmu.mstatus;
                 mstatus &= !MSTATUS_FS;
                 mstatus |= u64::from(self.fs) << MSTATUS_FS_SHIFT;
                 if self.fs == 3 {
@@ -664,10 +661,9 @@ impl Cpu {
             ),
             Csr::Fcsr => self.write_fcsr(value as i64),
             Csr::Sstatus => {
-                self.csr[Csr::Mstatus as usize] &= !0x8000_0003_000d_e162;
-                self.csr[Csr::Mstatus as usize] |= value & 0x8000_0003_000d_e162;
+                self.mmu.mstatus &= !0x8000_0003_000d_e162;
+                self.mmu.mstatus |= value & 0x8000_0003_000d_e162;
                 self.fs = ((value >> MSTATUS_FS_SHIFT) & 3) as u8;
-                self.mmu.update_mstatus(self.read_csr_raw(Csr::Mstatus));
             }
             Csr::Sie => {
                 self.csr[Csr::Mie as usize] &= !0x222;
@@ -685,9 +681,8 @@ impl Cpu {
                 self.csr[Csr::Mideleg as usize] = value & 0x222;
             }
             Csr::Mstatus => {
-                self.csr[Csr::Mstatus as usize] = value;
+                self.mmu.mstatus = value;
                 self.fs = ((value >> MSTATUS_FS_SHIFT) & 3) as u8;
-                self.mmu.update_mstatus(value);
             }
             Csr::Time => {
                 // XXX This should trap actually
@@ -3721,8 +3716,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             // @TODO: Throw error if higher privilege return instruction is executed
 
             if cpu.mmu.prv == PrivilegeMode::User
-                || cpu.mmu.prv == PrivilegeMode::Supervisor
-                    && cpu.csr[Csr::Mstatus as usize] & MSTATUS_TSR != 0
+                || cpu.mmu.prv == PrivilegeMode::Supervisor && cpu.mmu.mstatus & MSTATUS_TSR != 0
             {
                 cpu.handle_exception(&Trap {
                     trap_type: TrapType::IllegalInstruction,
@@ -3759,8 +3753,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "SFENCE.VMA",
         operation: |cpu, _address, word| {
             if cpu.mmu.prv == PrivilegeMode::User
-                || cpu.mmu.prv == PrivilegeMode::Supervisor
-                    && cpu.csr[Csr::Mstatus as usize] & MSTATUS_TVM != 0
+                || cpu.mmu.prv == PrivilegeMode::Supervisor && cpu.mmu.mstatus & MSTATUS_TVM != 0
             {
                 cpu.handle_exception(&Trap {
                     trap_type: TrapType::IllegalInstruction,
