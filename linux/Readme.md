@@ -77,8 +77,8 @@ $ sudo rmdir /mnt/rootfs
 
 ```sh
 $ cd riscv64-linux
-$ cp opensbi/build/platform/generic/firmware/fw_payload.elf path_to_simmerv/resources/linux/opensbi/
-$ cp rootfs/rootfs.img path_to_simmerv/resources/linux/
+$ cp opensbi/build/platform/generic/firmware/fw_payload.elf path_to_simmerv/linux/
+$ cp rootfs/rootfs.img path_to_simmerv/linux/
 ```
 
 ## Appendix : Build QEMU

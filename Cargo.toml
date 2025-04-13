@@ -8,7 +8,7 @@ license = "MIT"
 homepage = "https://github.com/tommythorn/simmerv"
 repository = "https://github.com/tommythorn/simmerv"
 exclude = [
-  "resources/*",
+  "linux/*",
   "screenshots/*",
   "cli/*",
   "wasm/*"

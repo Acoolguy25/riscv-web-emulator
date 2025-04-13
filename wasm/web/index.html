@@ -9,7 +9,7 @@
       import App from './App.js';
       import init, { WasmRiscv } from "./simmerv_wasm.js";
 
-      const resourcePath = '../../resources/';
+      const resourcePath = '../../';
       const COLUMNS = 80;
       const MINIMUM_ROWS = 24;
 
@@ -27,13 +27,10 @@
       terminal.writeln('Message from Takahiro, the original author of the emulator:');
       terminal.writeln('');
       terminal.writeln('This is RISC-V processor emulator written in Rust and compiled to WebAssembly.');
-      terminal.writeln('You can run the RISC-V port of Linux or xv6 (UNIX V6 rewritten by MIT for x86)');
-      terminal.writeln('on your browser. Select OS from the list and press Run button.');
+      terminal.writeln('You can run the RISC-V port of Linux');
+      terminal.writeln('in your browser. Select OS from the list and press Run button.');
       terminal.writeln('');
       terminal.writeln('Or you can run your own program. Drag and drop your binary file here.');
-      terminal.writeln('');
-      terminal.writeln('The emulator is still very slow. It takes time to boot Linux or xv6. Thank you');
-      terminal.writeln('for your patience.');
       terminal.writeln('');
       terminal.writeln('Enjoy RISC-V and Operating System on browser!');
       terminal.writeln('');
@@ -53,7 +50,7 @@
         }
 
         // Enable experimental address translation page cache optimization
-        // if booting Linux or xv6. Disable this feature if you face
+        // if booting Linux. Disable this feature if you face
         // uncertain error.
         if (isPresetBinaries) {
           riscv.enable_page_cache(true);
@@ -134,8 +131,7 @@
         const debugMode = debuggerCheckbox.checked;
         const selectedOption = fileSelect.selectedOptions[0];
         const filename = selectedOption.value;
-        const isLinux = filename === 'linux/opensbi/fw_payload.elf' || filename === 'linux/bbl/bbl';
-        const isXv6 = filename === 'xv6/kernel';
+        const isLinux = filename === 'linux/fw_payload.elf' || filename === 'linux/bbl/bbl';
 
         terminal.writeln('Downloading files...');
 
@@ -154,10 +150,6 @@
           } else {
             symbolBuffer = new ArrayBuffer(0);
           }
-        } else if (isXv6) {
-          const fsResponse = await fetch(resourcePath + 'xv6/fs.img');
-          fsBuffer = await fsResponse.arrayBuffer();
-          symbolBuffer = new ArrayBuffer(0);
         } else {
           runButton.disabled = false;
           fileSelect.disabled = false;
@@ -181,15 +173,14 @@
         .catch(error => terminal.writeln(error.message));
     </script>
     <select id="file-select">
-      <option value="linux/opensbi/fw_payload.elf" selected>Linux + OpenSBI</option>
+      <option value="linux/fw_payload.elf" selected>Linux + OpenSBI</option>
       <option value="linux/bbl/bbl">Linux + Legacy BBL</option>
-      <option value="xv6/kernel">xv6 (tiny OS)</option>
     </select>
     <button id="run-button" disabled>Run</button>
     <input id="debugger-checkbox" type="checkbox" disabled>Debugger</input>
     <div id="terminal"></div>
     <div>
-      <a href="https://risc-v-getting-started-guide.readthedocs.io/en/latest/linux-qemu.html">Linux</a>, <a href="https://github.com/mit-pdos/xv6-riscv" target="_blank">xv6</a> on <a href="https://github.com/tommythorn/simmerv" target="_blank">RISC-V processor emulator in Rust+WASM</a>
+      <a href="https://risc-v-getting-started-guide.readthedocs.io/en/latest/linux-qemu.html">Linux</a> on <a href="https://github.com/tommythorn/simmerv" target="_blank">RISC-V processor emulator in Rust+WASM</a>
     </div>
   </body>
 </html>

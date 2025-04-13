@@ -70,7 +70,7 @@ The emulator supports all instructions listed above but some
 
 ```sh
 $ cargo b -r --all
-$ target/release/simmerv_cli resources/linux/opensbi/fw_payload.elf -f resources/linux/rootfs.img
+$ target/release/simmerv_cli linux/fw_payload.elf -f linux/rootfs.img
 ```
 
 ## How to run riscv-tests
