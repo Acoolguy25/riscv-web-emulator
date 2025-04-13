@@ -1,20 +1,20 @@
 # Simmerv
 
-Simmerv is a virtual [RISC-V](https://riscv.org/) processor
-and peripheral devices emulator project written in Rust and
-compilable to WebAssembly.
+Simmerv is a [RISC-V](https://riscv.org/) SoC emulator and written in
+Rust and compilable to WebAssembly.
 
-This is a substantially enhanced fork of [Takahiro's riscv-rust
-original emulator](https://github.com/takahirox/riscv-rust).  This
-fork is already far more complete and is working towards near 100%
-correctness.  Ultimately, we also expect it to become substantially
-faster, but this work is delayed until this is sufficiently correct to
-run benchmarks and off-the-shelf Linux distributions.
+This is a substantially rewrite of [Takahiro's riscv-rust original
+emulator](https://github.com/takahirox/riscv-rust) (only 2% remains).
+This fork is already far more complete and is working towards near
+100% correctness.  Ultimately, we also expect it to become
+substantially faster, but this work is delayed until this is
+sufficiently correct to run benchmarks and off-the-shelf Linux
+distributions.
 
 ## Online Demo
 
-You can run Linux on the emulator in your browser. [Online demo is
-here](https://tommythorn.github.io/simmerv/wasm/web/index.html)
+You can run Linux on the emulator [in your
+browser](https://tommythorn.github.io/simmerv/wasm/web/index.html).
 
 ## Screenshots
 
@@ -23,11 +23,9 @@ here](https://tommythorn.github.io/simmerv/wasm/web/index.html)
 
 ## Features
 
-- Emulate RISC-V RV64GC_Zba_Zicond processor and peripheral devices (virtio block
-  device and a UART)
-- Also runnable in browser with WebAssembly
-- Runnable locally
-- Debugger
+- Emulate RISC-V RV64GC_Zba_Zicond processor and peripheral devices
+  (PLIC, CLINT, virtio block device and a UART)
+- Targets native and WASM
 
 ## Instructions/Features support status
 
@@ -41,26 +39,38 @@ here](https://tommythorn.github.io/simmerv/wasm/web/index.html)
 - [x] Sv39
 - [x] Sv48 (untested, but should work)
 - [x] Privileged instructions
-- [ ] PMP (this is intensionally not implemented as it will negatively affect performance)
+- [ ] PMP (this is intensionally not implemented as it will negatively
+      affect performance)
 
 The emulator supports all instructions listed above but some 
 
 - Boots Buildroot and Debian Trixie
 - Linux OpenSBI and legacy BBL boot support
 
-### Current Known Issues
+### Current Issues Being Worked
 
 - gdb, rustc, and Geekbench segfaults
 - Ubuntu boot crashes and hangs
-- Debian boot sees non-fatal crashes
+- Debian boot sees non-fatal segfaults
 - U-boot loads but hangs before hand-off
 
+### High Priority Work Post Issues
+
+- >> *Amortized decoding and instruction fusion via a instruction
+  translation cache* <<
+
+- Snapshot and resume
+
+- Disk support without an in-memory copy (can WASM support this?)
+
+- Fix the disassembler to recognize pseudo ops like li, mv, ret,
+  etc. (This requires a structural change).
 
 ## How to run Linux
 
 ```sh
 $ cargo b -r --all
-$ target/release/simmerv_cli ../resources/linux/opensbi/fw_payload.elf -f ../resources/linux/rootfs.img
+$ target/release/simmerv_cli resources/linux/opensbi/fw_payload.elf -f resources/linux/rootfs.img
 ```
 
 ## How to run riscv-tests
