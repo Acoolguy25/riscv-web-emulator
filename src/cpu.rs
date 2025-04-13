@@ -1094,6 +1094,36 @@ fn dump_format_csr(s: &mut String, cpu: &Cpu, _address: i64, word: u32, evaluate
     f.rd
 }
 
+#[allow(clippy::option_if_let_else)] // Clippy is loosing it
+fn dump_format_csri(s: &mut String, cpu: &Cpu, _address: i64, word: u32, evaluate: bool) -> usize {
+    let f = parse_format_csr(word);
+    *s += get_register_name(f.rd);
+    let _ = write!(s, ", ");
+
+    let csr: Option<Csr> = FromPrimitive::from_u16(f.csr);
+    let csr_s = if let Some(csr) = csr {
+        format!("{csr}").to_lowercase()
+    } else {
+        format!("csr{:03x}", f.csr)
+    };
+
+    if evaluate {
+        let _ = match FromPrimitive::from_u16(f.csr) {
+            Some(csr) => {
+                write!(s, "{csr_s}:{:x}", cpu.read_csr_raw(csr))
+            }
+            None => {
+                write!(s, "{csr_s}")
+            }
+        };
+    } else {
+        let _ = write!(s, "{csr_s}");
+    }
+
+    let _ = write!(s, ", {}", f.rs);
+    f.rd
+}
+
 struct FormatI {
     rd: usize,
     rs1: usize,
@@ -1190,6 +1220,19 @@ fn dump_format_r(s: &mut String, cpu: &Cpu, _address: i64, word: u32, evaluate: 
     if evaluate && f.rs2 != 0 {
         let _ = write!(s, ":{:x}", cpu.x[f.rs2]);
     }
+    f.rd
+}
+
+fn dump_format_ri(s: &mut String, cpu: &Cpu, _address: i64, word: u32, evaluate: bool) -> usize {
+    let f = parse_format_r(word);
+    *s += get_register_name(f.rd);
+    let _ = write!(s, ", ");
+    *s += get_register_name(f.rs1);
+    if evaluate && f.rs1 != 0 {
+        let _ = write!(s, ":{:x}", cpu.x[f.rs1]);
+    }
+    let shamt = (word >> 20) & 63;
+    let _ = write!(s, ", {shamt}");
     f.rd
 }
 
@@ -1892,7 +1935,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             cpu.write_x(f.rd, s1 << shamt);
             Ok(())
         },
-        disassemble: dump_format_r,
+        disassemble: dump_format_ri,
     },
     Instruction {
         mask: 0xfc00707f,
@@ -1906,7 +1949,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             cpu.write_x(f.rd, ((s1 as u64) >> shamt) as i64);
             Ok(())
         },
-        disassemble: dump_format_r,
+        disassemble: dump_format_ri,
     },
     Instruction {
         mask: 0xfc00707f,
@@ -1920,7 +1963,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             cpu.write_x(f.rd, s1 >> shamt);
             Ok(())
         },
-        disassemble: dump_format_r,
+        disassemble: dump_format_ri,
     },
     Instruction {
         mask: 0x0000707f,
@@ -1945,7 +1988,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             cpu.write_x(f.rd, i64::from((s1 << shamt) as i32));
             Ok(())
         },
-        disassemble: dump_format_r,
+        disassemble: dump_format_ri,
     },
     Instruction {
         mask: 0xfe00707f,
@@ -1959,7 +2002,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             cpu.write_x(f.rd, i64::from(((s1 as u32) >> shamt) as i32));
             Ok(())
         },
-        disassemble: dump_format_r,
+        disassemble: dump_format_ri,
     },
     Instruction {
         mask: 0xfe00707f,
@@ -1972,7 +2015,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             cpu.write_x(f.rd, i64::from((s1 as i32) >> shamt));
             Ok(())
         },
-        disassemble: dump_format_r,
+        disassemble: dump_format_ri,
     },
     Instruction {
         mask: 0xfe00707f,
@@ -2121,7 +2164,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
 
             Ok(())
         },
-        disassemble: dump_format_csr,
+        disassemble: dump_format_csri,
     },
     Instruction {
         mask: 0x0000707f,
@@ -2136,7 +2179,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             cpu.write_x(f.rd, data);
             Ok(())
         },
-        disassemble: dump_format_csr,
+        disassemble: dump_format_csri,
     },
     Instruction {
         mask: 0x0000707f,
@@ -2151,7 +2194,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             cpu.write_x(f.rd, data);
             Ok(())
         },
-        disassemble: dump_format_csr,
+        disassemble: dump_format_csri,
     },
     // RV32M
     Instruction {
