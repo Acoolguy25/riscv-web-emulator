@@ -62,6 +62,18 @@ impl From<PrivMode> for u64 {
     }
 }
 
+/// Returns `PrivMode` from encoded privilege mode bits
+/// # Panics
+/// On unknown modes crash
+#[must_use]
+pub fn priv_mode_from(encoding: u64) -> PrivMode {
+    assert_ne!(encoding, 2);
+    let Ok(m) = PrivMode::try_from(encoding) else {
+        unreachable!();
+    };
+    m
+}
+
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum MemoryAccessType {
     Execute,

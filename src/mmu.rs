@@ -1,36 +1,38 @@
 #![allow(clippy::unreadable_literal, clippy::cast_possible_wrap)]
 
-use crate::cpu::get_priv_mode;
-use crate::cpu::{
-    CONFIG_SW_MANAGED_A_AND_D, Exception, MSTATUS_MPP_SHIFT, MSTATUS_MPRV, MSTATUS_MXR,
-    MSTATUS_SUM, PG_SHIFT,
-};
-use crate::csr::SATP_MODE_MASK;
-use crate::csr::SATP_MODE_SHIFT;
-use crate::csr::SATP_PPN_MASK;
-use crate::csr::SATP_PPN_SHIFT;
-use crate::csr::SatpMode;
+use crate::cpu;
+use crate::csr;
 use crate::device::clint::Clint;
 use crate::device::plic::Plic;
 use crate::device::uart::Uart;
 use crate::device::virtio_block_disk::VirtioBlockDisk;
 pub use crate::memory::*;
-use crate::riscv::MemoryAccessType;
-use crate::riscv::PrivMode;
-use crate::riscv::Trap;
+use crate::riscv;
 use crate::terminal::Terminal;
+use cpu::{
+    CONFIG_SW_MANAGED_A_AND_D, Exception, MSTATUS_MPP_SHIFT, MSTATUS_MPRV, MSTATUS_MXR,
+    MSTATUS_SUM, PG_SHIFT,
+};
+use csr::SATP_MODE_MASK;
+use csr::SATP_MODE_SHIFT;
+use csr::SATP_PPN_MASK;
+use csr::SATP_PPN_SHIFT;
+use csr::SatpMode;
 use fnv::FnvHashMap;
 use log::trace;
 use log::warn;
+use riscv::MemoryAccessType;
+use riscv::PrivMode;
+use riscv::Trap;
+use riscv::priv_mode_from;
 
 const DTB_SIZE: usize = 0xfe0;
 
 /// Emulates Memory Management Unit. It holds the Main memory and peripheral
 /// devices, maps address to them, and accesses them depending on address.
 ///
-/// It also manages virtual-physical address translation and memoty protection.
-/// It may also be said Bus.
-/// @TODO: Memory protection is not implemented yet. We should support.
+/// It also manages virtual-physical address translation and memory protection.
+/// It could also be called Bus.
 pub struct Mmu {
     // CPU state that lives here
     pub prv: PrivMode,
@@ -45,7 +47,7 @@ pub struct Mmu {
     clint: Clint,
     uart: Uart,
 
-    /// Address translation page cache. Experimental feature.
+    /// Address translation page cache.
     /// The cache is cleared when translation mapping can be changed;
     /// SATP, or PRV is updated or FENCE.VMA is executed.
     /// Technically page table entries
@@ -599,7 +601,7 @@ impl Mmu {
         let effective_prv =
             if self.mstatus & MSTATUS_MPRV != 0 && access != MemoryAccessType::Execute {
                 // Use previous privilege
-                get_priv_mode((self.mstatus >> MSTATUS_MPP_SHIFT) & 3)
+                priv_mode_from((self.mstatus >> MSTATUS_MPP_SHIFT) & 3)
             } else {
                 prv
             };

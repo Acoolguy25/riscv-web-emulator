@@ -144,7 +144,7 @@ impl WasmRiscv {
         }
         for _i in 0..max_cycles {
             self.emulator.tick(40);
-            let pc = self.emulator.get_cpu().read_npc();
+            let pc = self.emulator.get_cpu().read_pc();
             if table.contains_key(&pc) {
                 return true;
             }
@@ -174,7 +174,7 @@ impl WasmRiscv {
 
     /// Reads Program Counter content.
     pub fn read_pc(&self) -> i64 {
-        self.emulator.get_cpu().read_npc()
+        self.emulator.get_cpu().read_pc()
     }
 
     /// Gets ascii code byte sent from the emulator to terminal.

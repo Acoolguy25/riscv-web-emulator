@@ -4,22 +4,23 @@
 use crate::csr;
 use crate::dag_decoder;
 use crate::fp;
-use crate::fp::{
-    RoundingMode, Sf, Sf32, Sf64, cvt_i32_sf32, cvt_i64_sf32, cvt_u32_sf32, cvt_u64_sf32,
-};
 use crate::mmu::Mmu;
-use crate::riscv::MemoryAccessType;
-use crate::riscv::MemoryAccessType::Execute;
-use crate::riscv::MemoryAccessType::Read;
-use crate::riscv::MemoryAccessType::Write;
-use crate::riscv::PrivMode;
-use crate::riscv::Trap;
+use crate::riscv;
 use crate::rvc;
-use crate::terminal::Terminal;
+use crate::terminal;
 pub use csr::*;
+use fp::{RoundingMode, Sf, Sf32, Sf64, cvt_i32_sf32, cvt_i64_sf32, cvt_u32_sf32, cvt_u64_sf32};
 use log;
 use num_traits::FromPrimitive;
+use riscv::MemoryAccessType;
+use riscv::MemoryAccessType::Execute;
+use riscv::MemoryAccessType::Read;
+use riscv::MemoryAccessType::Write;
+use riscv::PrivMode;
+use riscv::Trap;
+use riscv::priv_mode_from;
 use std::fmt::Write as _;
+use terminal::Terminal;
 
 pub const CONFIG_SW_MANAGED_A_AND_D: bool = false;
 
@@ -27,56 +28,42 @@ pub const PG_SHIFT: usize = 12; // 4K page size
 
 /// Emulates a RISC-V CPU core
 pub struct Cpu {
-    npc: i64,
+    // The essential CPU state
     x: [i64; 32],
-
-    // .. adding FP state
     f: [i64; 32],
+    pc: i64,
     frm_: RoundingMode, // XXX make this accessor functions on fcsr
     fflags_: u8,        // XXX make this accessor functions on fcsr
     fs: u8,             // XXX This is redundant and usage is suspect
 
-    // .. adding Supervisor and CSR
+    // Supervisor and CSR
     pub cycle: u64,
     csr: Box<[u64]>, // XXX this should be replaced with individual registers
     reservation: Option<u64>,
 
-    // The rest is just conveniences
-    wfi: bool, // Wait-For-Interrupt; relax and await further instruction
+    // Wait-For-Interrupt; relax and await further instruction
+    wfi: bool,
 
-    pub seqno: usize, // Important for sanity: uniquely name each executed insn
+    // Important for sanity: uniquely name each executed insn
     // You can derive instret from this except sane people
     // could consider ECALL and EBREAK as committing.
-    pub pc: i64, // XXX As we found, we don't actually need to keep this in the
-    // state!
-    pub insn: u32, // This is the original original bytes, prior to decompression
-    // XXX As we found, we don't actually need to keep this in the
-    // state!
-    mmu: Mmu, // Holds all memory and devices
+    pub seqno: usize,
 
-    decode_dag: Vec<u16>, // Decoding table
+    // This is used for reporting exceptions
+    pub insn_addr: i64,
+    pub insn: u32,
+
+    // Holds all memory and devices
+    mmu: Mmu,
+
+    // Decoding table
+    decode_dag: Vec<u16>,
 }
 
 #[derive(Debug)]
 pub struct Exception {
     pub trap: Trap,
     pub tval: i64,
-}
-
-fn get_priv_encoding(mode: PrivMode) -> u64 {
-    u64::from(mode)
-}
-
-/// Returns `PrivMode` from encoded privilege mode bits
-/// # Panics
-/// On unknown modes crash
-#[must_use]
-pub fn get_priv_mode(encoding: u64) -> PrivMode {
-    assert_ne!(encoding, 2);
-    let Ok(m) = PrivMode::try_from(encoding) else {
-        unreachable!();
-    };
-    m
 }
 
 const fn get_trap_cause(exc: &Exception) -> u64 {
@@ -111,8 +98,8 @@ impl Cpu {
             seqno: 0,
             cycle: 0,
             wfi: false,
-            npc: 0,
             pc: 0,
+            insn_addr: 0,
             insn: 0,
             csr: vec![0; 4096].into_boxed_slice(), // XXX MUST GO AWAY SOON
             mmu: Mmu::new(terminal),
@@ -144,15 +131,22 @@ impl Cpu {
         }
     }
 
-    /// Updates Program Counter content
+    /// Reads Program counter
+    #[must_use]
+    #[allow(clippy::cast_sign_loss)]
+    pub const fn read_pc(&self) -> i64 {
+        self.pc
+    }
+
+    /// Updates Program Counter
     ///
     /// # Arguments
     /// * `value`
-    pub const fn update_npc(&mut self, value: i64) {
-        self.npc = value & !1;
+    pub const fn update_pc(&mut self, value: i64) {
+        self.pc = value & !1;
     }
 
-    /// Reads integer register content
+    /// Reads integer register
     ///
     /// # Arguments
     /// * `reg` Register number. Must be 0-31
@@ -162,32 +156,26 @@ impl Cpu {
         self.read_x(reg as usize)
     }
 
+    /// Checks that float instructions are enabled and
+    /// that the rounding mode is legal (XXX this should be part of format!)
     fn check_float_access(&self, rm: usize) -> Result<(), Exception> {
         if self.fs == 0 || rm == 5 || rm == 6 {
             Err(Exception {
                 trap: Trap::IllegalInstruction,
-                tval: i64::from(self.insn), // XXX we could assign this outside, eliminating the need for self.insn here
+                tval: i64::from(self.insn),
             })
         } else {
             Ok(())
         }
     }
 
-    /// Reads Next Program counter content
-    #[must_use]
-    #[allow(clippy::cast_sign_loss)]
-    pub const fn read_npc(&self) -> i64 {
-        self.npc
-    }
-
     /// Runs program N cycles. Fetch, decode, and execution are completed in a cycle so far.
     #[allow(clippy::cast_sign_loss)]
     pub fn run_soc(&mut self, cpu_steps: usize) {
         for _ in 0..cpu_steps {
-            self.step_cpu();
-
-            // XXX Here is the only place we should be calling handle_exception
-            // Interrupts should also be handled here
+            if let Err(exc) = self.step_cpu() {
+                self.handle_exception(&exc);
+            }
 
             if self.wfi {
                 break;
@@ -199,25 +187,25 @@ impl Cpu {
 
     // It's here, the One Key Function.  This is where it all happens!
     #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-    fn step_cpu(&mut self) {
+    fn step_cpu(&mut self) -> Result<(), Exception> {
         self.cycle = self.cycle.wrapping_add(1);
         if self.wfi {
             if self.mmu.mip & self.read_csr_raw(Csr::Mie) != 0 {
                 self.wfi = false;
             }
-            return;
+            return Ok(());
         }
 
         self.seqno = self.seqno.wrapping_add(1);
-        self.pc = self.npc;
+        self.insn_addr = self.pc;
         // Exception was triggered
         // XXX For full correctness we mustn't fail if we _can_ fetch 16-bit
         // _and_ it turns out to be a legal instruction.
-        let word = self.memop(Execute, self.pc, 0, 0, 4)?;
+        let word = self.memop(Execute, self.insn_addr, 0, 0, 4)?;
         self.insn = word as u32;
 
-        let (insn, npc) = decompress(self.pc, word as u32);
-        self.npc = npc;
+        let (insn, npc) = decompress(self.insn_addr, word as u32);
+        self.pc = npc;
         let Ok(decoded) = decode(&self.decode_dag, insn) else {
             return Err(Exception {
                 trap: Trap::IllegalInstruction,
@@ -225,7 +213,7 @@ impl Cpu {
             });
         };
 
-        (decoded.operation)(self, self.pc, insn)
+        (decoded.operation)(self, self.insn_addr, insn)
     }
 
     #[allow(clippy::cast_sign_loss)]
@@ -250,9 +238,9 @@ impl Cpu {
         ] {
             let trap = Exception {
                 trap: trap_type,
-                tval: self.npc,
+                tval: self.pc,
             };
-            if minterrupt & intr != 0 && self.handle_trap(&trap, self.npc, true) {
+            if minterrupt & intr != 0 && self.handle_trap(&trap, self.pc, true) {
                 self.wfi = false;
                 self.reservation = None;
                 return;
@@ -263,13 +251,13 @@ impl Cpu {
     fn handle_exception(&mut self, exc: &Exception) {
         // XXX If we pass in the address we don't need
         // self.pc, but that requires us to call handle exception from a centrol location with access to the pc.
-        self.handle_trap(exc, self.pc, false);
+        self.handle_trap(exc, self.insn_addr, false);
     }
 
     #[allow(clippy::similar_names, clippy::too_many_lines)]
     #[allow(clippy::cast_sign_loss)]
     fn handle_trap(&mut self, exc: &Exception, insn_addr: i64, is_interrupt: bool) -> bool {
-        let current_priv_encoding = get_priv_encoding(self.mmu.prv);
+        let current_priv_encoding = u64::from(self.mmu.prv);
         let cause = get_trap_cause(exc);
 
         // First, determine which privilege mode should handle the trap.
@@ -293,7 +281,7 @@ impl Cpu {
         } else {
             PrivMode::U
         };
-        let new_priv_encoding = get_priv_encoding(new_priv_mode);
+        let new_priv_encoding = u64::from(new_priv_mode);
         let current_status = match self.mmu.prv {
             PrivMode::M => self.read_csr_raw(Csr::Mstatus),
             PrivMode::S => self.read_csr_raw(Csr::Sstatus),
@@ -423,11 +411,11 @@ impl Cpu {
         self.write_csr_raw(csr_epc_address, insn_addr as u64);
         self.write_csr_raw(csr_cause_address, cause);
         self.write_csr_raw(csr_tval_address, exc.tval as u64);
-        self.npc = self.read_csr_raw(csr_tvec_address) as i64;
+        self.pc = self.read_csr_raw(csr_tvec_address) as i64;
 
         // Add 4 * cause if tvec has vector type address
-        if self.npc & 3 != 0 {
-            self.npc = (self.npc & !3) + 4 * (cause as i64 & 0xffff);
+        if self.pc & 3 != 0 {
+            self.pc = (self.pc & !3) + 4 * (cause as i64 & 0xffff);
         }
 
         match self.mmu.prv {
@@ -458,13 +446,13 @@ impl Cpu {
         let csr = FromPrimitive::from_u16(csrno)?;
 
         if !csr::legal(csr) {
-            log::warn!("** {:016x}: {csr:?} isn't implemented", self.pc); // XXX Ok, fine, it's useful for debugging but ....
+            log::warn!("** {:016x}: {csr:?} isn't implemented", self.insn_addr); // XXX Ok, fine, it's useful for debugging but ....
             return None;
         }
 
         let privilege = (csrno >> 8) & 3;
-        if u64::from(privilege) > get_priv_encoding(self.mmu.prv) {
-            log::warn!("** {:016x}: Lacking priviledge for {csr:?}", self.pc);
+        if u64::from(privilege) > { u64::from(self.mmu.prv) } {
+            log::warn!("** {:016x}: Lacking priviledge for {csr:?}", self.insn_addr);
             return None;
         }
 
@@ -521,7 +509,7 @@ impl Cpu {
             }
             Csr::Fflags | Csr::Frm | Csr::Fcsr => self.check_float_access(0)?,
             Csr::Cycle => {
-                log::info!("** deny cycle writing from {:016x}", self.pc);
+                log::info!("** deny cycle writing from {:016x}", self.insn_addr);
                 return illegal;
             }
             Csr::Satp => {
@@ -674,11 +662,11 @@ impl Cpu {
 
     #[allow(clippy::cast_sign_loss)]
     pub fn disassemble(&mut self, s: &mut String) -> usize {
-        let Ok(word32) = self.memop_disass(self.npc) else {
-            let _ = write!(s, "{:016x} <inaccessible>", self.npc);
+        let Ok(word32) = self.memop_disass(self.pc) else {
+            let _ = write!(s, "{:016x} <inaccessible>", self.pc);
             return 0;
         };
-        self.disassemble_insn(s, self.npc, (word32 & 0xFFFFFFFF) as u32, true)
+        self.disassemble_insn(s, self.pc, (word32 & 0xFFFFFFFF) as u32, true)
     }
 
     /// Returns mutable `Mmu`
@@ -1261,7 +1249,7 @@ const fn dump_empty(
 
 const fn get_register_name(num: usize) -> &'static str {
     [
-        "zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2", "s0", "s1", "a0", "a1", "a2", "a3", "a4",
+        "x0", "ra", "sp", "gp", "tp", "t0", "t1", "t2", "s0", "s1", "a0", "a1", "a2", "a3", "a4",
         "a5", "a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11", "t3", "t4",
         "t5", "t6",
     ][num]
@@ -1306,8 +1294,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "JAL",
         operation: |cpu, address, word| {
             let f = parse_format_j(word);
-            cpu.write_x(f.rd, cpu.npc);
-            cpu.npc = address.wrapping_add(f.imm);
+            cpu.write_x(f.rd, cpu.pc);
+            cpu.pc = address.wrapping_add(f.imm);
             Ok(())
         },
         disassemble: dump_format_j,
@@ -1318,8 +1306,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         name: "JALR",
         operation: |cpu, _address, word| {
             let f = parse_format_i(word);
-            let tmp = cpu.npc;
-            cpu.npc = cpu.read_x(f.rs1).wrapping_add(f.imm) & !1;
+            let tmp = cpu.pc;
+            cpu.pc = cpu.read_x(f.rs1).wrapping_add(f.imm) & !1;
             cpu.write_x(f.rd, tmp);
             Ok(())
         },
@@ -1341,7 +1329,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |cpu, address, word| {
             let f = parse_format_b(word);
             if cpu.read_x(f.rs1) == cpu.read_x(f.rs2) {
-                cpu.npc = address.wrapping_add(f.imm);
+                cpu.pc = address.wrapping_add(f.imm);
             }
             Ok(())
         },
@@ -1354,7 +1342,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |cpu, address, word| {
             let f = parse_format_b(word);
             if cpu.read_x(f.rs1) != cpu.read_x(f.rs2) {
-                cpu.npc = address.wrapping_add(f.imm);
+                cpu.pc = address.wrapping_add(f.imm);
             }
             Ok(())
         },
@@ -1367,7 +1355,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |cpu, address, word| {
             let f = parse_format_b(word);
             if cpu.read_x(f.rs1) < cpu.read_x(f.rs2) {
-                cpu.npc = address.wrapping_add(f.imm);
+                cpu.pc = address.wrapping_add(f.imm);
             }
             Ok(())
         },
@@ -1380,7 +1368,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |cpu, address, word| {
             let f = parse_format_b(word);
             if cpu.read_x(f.rs1) >= cpu.read_x(f.rs2) {
-                cpu.npc = address.wrapping_add(f.imm);
+                cpu.pc = address.wrapping_add(f.imm);
             }
             Ok(())
         },
@@ -1393,7 +1381,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |cpu, address, word| {
             let f = parse_format_b(word);
             if (cpu.read_x(f.rs1) as u64) < (cpu.read_x(f.rs2) as u64) {
-                cpu.npc = address.wrapping_add(f.imm);
+                cpu.pc = address.wrapping_add(f.imm);
             }
             Ok(())
         },
@@ -1406,7 +1394,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |cpu, address, word| {
             let f = parse_format_b(word);
             if (cpu.read_x(f.rs1) as u64) >= (cpu.read_x(f.rs2) as u64) {
-                cpu.npc = address.wrapping_add(f.imm);
+                cpu.pc = address.wrapping_add(f.imm);
             }
             Ok(())
         },
@@ -3126,12 +3114,11 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
     },
     Instruction {
         mask: 0x0600007f,
-        bits: 0x02000043, // Example 7287f7c3 fmadd.d fa5,fa5,fs0,fa4
+        bits: 0x02000043,
         name: "FMADD.D",
         operation: |cpu, _address, word| {
             let f = parse_format_r2(word);
             cpu.check_float_access(f.rm)?;
-            // XXX Update fflf.rmags
             cpu.write_f64(
                 f.rd,
                 cpu.read_f64(f.rs1)
@@ -3431,8 +3418,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         disassemble: dump_format_r,
     },
     Instruction {
-        mask: 0xfff0007f, // XXX Suspect
-        bits: 0xc2100053, // XXX Suspect
+        mask: 0xfff0007f,
+        bits: 0xc2100053,
         name: "FCVT.WU.D",
         operation: |cpu, _address, word| {
             let f = parse_format_r(word);
@@ -3470,8 +3457,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
     },
     // RV64D
     Instruction {
-        mask: 0xfff0007f, // XXX Suspect
-        bits: 0xc2200053, // XXX Suspect
+        mask: 0xfff0007f,
+        bits: 0xc2200053,
         name: "FCVT.L.D",
         operation: |cpu, _address, word| {
             let f = parse_format_r(word);
@@ -3559,11 +3546,11 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         bits: 0x30200073,
         name: "MRET",
         operation: |cpu, _address, _word| {
-            cpu.npc = cpu.read_csr(Csr::Mepc as u16)? as i64;
+            cpu.pc = cpu.read_csr(Csr::Mepc as u16)? as i64;
             let status = cpu.read_csr_raw(Csr::Mstatus);
             let mpie = (status >> 7) & 1;
             let mpp = (status >> 11) & 3;
-            let mprv = match get_priv_mode(mpp) {
+            let mprv = match priv_mode_from(mpp) {
                 PrivMode::M => (status >> 17) & 1,
                 _ => 0,
             };
@@ -3571,7 +3558,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             // and override MPRV[17]
             let new_status = (status & !0x21888) | (mprv << 17) | (mpie << 3) | (1 << 7);
             cpu.write_csr_raw(Csr::Mstatus, new_status);
-            cpu.mmu.update_priv_mode(get_priv_mode(mpp));
+            cpu.mmu.update_priv_mode(priv_mode_from(mpp));
             Ok(())
         },
         disassemble: dump_empty,
@@ -3590,11 +3577,11 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
                 });
             }
 
-            cpu.npc = cpu.read_csr(Csr::Sepc as u16)? as i64;
+            cpu.pc = cpu.read_csr(Csr::Sepc as u16)? as i64;
             let status = cpu.read_csr_raw(Csr::Sstatus);
             let spie = (status >> 5) & 1;
             let spp = (status >> 8) & 1;
-            let mprv = match get_priv_mode(spp) {
+            let mprv = match priv_mode_from(spp) {
                 PrivMode::M => (status >> 17) & 1,
                 _ => 0,
             };
@@ -3602,7 +3589,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             // and override MPRV[17]
             let new_status = (status & !0x20122) | (mprv << 17) | (spie << 1) | (1 << 5);
             cpu.write_csr_raw(Csr::Sstatus, new_status);
-            cpu.mmu.update_priv_mode(get_priv_mode(spp));
+            cpu.mmu.update_priv_mode(priv_mode_from(spp));
             Ok(())
         },
         disassemble: dump_empty,
@@ -3789,10 +3776,10 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         mask: 0,
         bits: 0,
         name: "INVALID",
-        operation: |_address, _word, _cpu| {
+        operation: |_cpu, _address, word| {
             Err(Exception {
                 trap: Trap::IllegalInstruction,
-                tval: 0,
+                tval: word as i64,
             })
         },
         disassemble: dump_empty,
@@ -3817,11 +3804,11 @@ mod test_cpu {
     #[test]
     fn update_pc() {
         let mut cpu = create_cpu();
-        assert_eq!(0, cpu.read_npc());
-        cpu.update_npc(1);
-        assert_eq!(0, cpu.read_npc());
-        cpu.update_npc(0xffffffffffffffffu64 as i64);
-        assert_eq!(0xfffffffffffffffeu64 as i64, cpu.read_npc());
+        assert_eq!(0, cpu.read_pc());
+        cpu.update_pc(1);
+        assert_eq!(0, cpu.read_pc());
+        cpu.update_pc(0xffffffffffffffffu64 as i64);
+        assert_eq!(0xfffffffffffffffeu64 as i64, cpu.read_pc());
     }
 
     #[test]
@@ -3876,7 +3863,7 @@ mod test_cpu {
     fn tick() {
         let mut cpu = create_cpu();
         cpu.get_mut_mmu().init_memory(8);
-        cpu.update_npc(DRAM_BASE as i64);
+        cpu.update_pc(DRAM_BASE as i64);
 
         // Write non-compressed "addi x1, x1, 1" instruction
         match cpu.get_mut_mmu().store_virt_u32(DRAM_BASE, 0x00108093) {
@@ -3891,40 +3878,32 @@ mod test_cpu {
 
         cpu.run_soc(1);
 
-        assert_eq!(DRAM_BASE as i64 + 4, cpu.read_npc());
+        assert_eq!(DRAM_BASE as i64 + 4, cpu.read_pc());
         assert_eq!(1, cpu.read_register(1));
 
         cpu.run_soc(1);
 
-        assert_eq!(DRAM_BASE as i64 + 6, cpu.read_npc());
+        assert_eq!(DRAM_BASE as i64 + 6, cpu.read_pc());
         assert_eq!(8, cpu.read_register(8));
     }
 
     #[test]
     #[allow(clippy::match_wild_err_arm)]
-    fn run_cpu_tick() {
+    fn step_cpu() {
         let mut cpu = create_cpu();
         cpu.get_mut_mmu().init_memory(4);
-        cpu.update_npc(DRAM_BASE as i64);
+        cpu.update_pc(DRAM_BASE as i64);
         // write non-compressed "addi a0, a0, 12" instruction
         match cpu.get_mut_mmu().store_virt_u32(DRAM_BASE, 0xc50513) {
             Ok(()) => {}
             Err(_e) => panic!("Failed to store"),
         }
-        assert_eq!(DRAM_BASE as i64, cpu.read_npc());
+        assert_eq!(DRAM_BASE as i64, cpu.read_pc());
         assert_eq!(0, cpu.read_register(10));
-        cpu.step_cpu();
-        /*
-            should test for handing paniced
-            {
-            match
-            Ok(()) => {}
-            Err(_e) => panic!("run_cpu_tick() unexpectedly did panic"),
+        if let Err(exc) = cpu.step_cpu() {
+            cpu.handle_exception(&exc);
         }
-        */
-        // .run_cpu_tick() increments the program counter by 4 for
-        // non-compressed instruction.
-        assert_eq!(DRAM_BASE as i64 + 4, cpu.read_npc());
+        assert_eq!(DRAM_BASE as i64 + 4, cpu.read_pc());
         // "addi a0, a0, a12" instruction writes 12 to a0 register.
         assert_eq!(12, cpu.read_register(10));
     }
@@ -3968,18 +3947,18 @@ mod test_cpu {
             Err(_e) => panic!("Failed to decode"),
         }
         cpu.get_mut_mmu().init_memory(4);
-        cpu.update_npc(DRAM_BASE as i64);
+        cpu.update_pc(DRAM_BASE as i64);
         // write WFI instruction
         match cpu.get_mut_mmu().store_virt_u32(DRAM_BASE, wfi_instruction) {
             Ok(()) => {}
             Err(_e) => panic!("Failed to store"),
         }
         cpu.run_soc(1);
-        assert_eq!(DRAM_BASE as i64 + 4, cpu.read_npc());
+        assert_eq!(DRAM_BASE as i64 + 4, cpu.read_pc());
         for _i in 0..10 {
             // Until interrupt happens, .tick() does nothing
             cpu.run_soc(1);
-            assert_eq!(DRAM_BASE as i64 + 4, cpu.read_npc());
+            assert_eq!(DRAM_BASE as i64 + 4, cpu.read_pc());
         }
         // Machine timer interrupt
         cpu.write_csr_raw(Csr::Mie, MIP_MTIP);
@@ -3988,7 +3967,7 @@ mod test_cpu {
         cpu.write_csr_raw(Csr::Mtvec, 0x0);
         cpu.run_soc(1);
         // Interrupt happened and moved to handler
-        assert_eq!(0, cpu.read_npc());
+        assert_eq!(0, cpu.read_pc());
     }
 
     #[test]
@@ -4002,7 +3981,7 @@ mod test_cpu {
             Ok(()) => {}
             Err(_e) => panic!("Failed to store"),
         }
-        cpu.update_npc(DRAM_BASE as i64);
+        cpu.update_pc(DRAM_BASE as i64);
 
         // Machine timer interrupt but mie in mstatus is not enabled yet
         cpu.write_csr_raw(Csr::Mie, MIP_MTIP);
@@ -4012,16 +3991,16 @@ mod test_cpu {
         cpu.run_soc(1);
 
         // Interrupt isn't caught because mie is disabled
-        assert_eq!(DRAM_BASE as i64 + 4, cpu.read_npc());
+        assert_eq!(DRAM_BASE as i64 + 4, cpu.read_pc());
 
-        cpu.update_npc(DRAM_BASE as i64);
+        cpu.update_pc(DRAM_BASE as i64);
         // Enable mie in mstatus
         cpu.write_csr_raw(Csr::Mstatus, 0x8);
 
         cpu.run_soc(1);
 
         // Interrupt happened and moved to handler
-        assert_eq!(handler_vector as i64, cpu.read_npc());
+        assert_eq!(handler_vector as i64, cpu.read_pc());
 
         // CSR Cause register holds the reason what caused the interrupt
         assert_eq!(0x8000000000000007, cpu.read_csr_raw(Csr::Mcause));
@@ -4045,12 +4024,12 @@ mod test_cpu {
             Err(_e) => panic!("Failed to store"),
         }
         cpu.write_csr_raw(Csr::Mtvec, handler_vector);
-        cpu.update_npc(DRAM_BASE as i64);
+        cpu.update_pc(DRAM_BASE as i64);
 
         cpu.run_soc(1);
 
         // Interrupt happened and moved to handler
-        assert_eq!(handler_vector as i64, cpu.read_npc());
+        assert_eq!(handler_vector as i64, cpu.read_pc());
 
         // CSR Cause register holds the reason what caused the trap
         assert_eq!(0xb, cpu.read_csr_raw(Csr::Mcause));
@@ -4066,7 +4045,7 @@ mod test_cpu {
     fn hardocded_zero() {
         let mut cpu = create_cpu();
         cpu.get_mut_mmu().init_memory(8);
-        cpu.update_npc(DRAM_BASE as i64);
+        cpu.update_pc(DRAM_BASE as i64);
 
         // Write non-compressed "addi x0, x0, 1" instruction
         match cpu.get_mut_mmu().store_virt_u32(DRAM_BASE, 0x00100013) {
