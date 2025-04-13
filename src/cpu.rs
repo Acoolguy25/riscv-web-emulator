@@ -210,27 +210,22 @@ impl Cpu {
 
         self.seqno = self.seqno.wrapping_add(1);
         self.pc = self.npc;
-        let Some(word) = self.memop(Execute, self.pc, 0, 0, 4) else {
-            // Exception was triggered
-            // XXX For full correctness we mustn't fail if we _can_ fetch 16-bit
-            // _and_ it turns out to be a legal instruction.
-            return;
-        };
+        // Exception was triggered
+        // XXX For full correctness we mustn't fail if we _can_ fetch 16-bit
+        // _and_ it turns out to be a legal instruction.
+        let word = self.memop(Execute, self.pc, 0, 0, 4)?;
         self.insn = word as u32;
 
         let (insn, npc) = decompress(self.pc, word as u32);
         self.npc = npc;
         let Ok(decoded) = decode(&self.decode_dag, insn) else {
-            self.handle_exception(&Exception {
+            return Err(Exception {
                 trap: Trap::IllegalInstruction,
                 tval: word,
             });
-            return;
         };
 
-        if let Err(e) = (decoded.operation)(self, self.pc, insn) {
-            self.handle_exception(&e);
-        }
+        (decoded.operation)(self, self.pc, insn)
     }
 
     #[allow(clippy::cast_sign_loss)]
@@ -679,7 +674,7 @@ impl Cpu {
 
     #[allow(clippy::cast_sign_loss)]
     pub fn disassemble(&mut self, s: &mut String) -> usize {
-        let Some(word32) = self.memop_disass(self.npc) else {
+        let Ok(word32) = self.memop_disass(self.npc) else {
             let _ = write!(s, "{:016x} <inaccessible>", self.npc);
             return 0;
         };
@@ -789,11 +784,11 @@ impl Cpu {
         offset: i64,
         v: i64,
         size: i64,
-    ) -> Option<i64> {
+    ) -> Result<i64, Exception> {
         self.memop_general(access, baseva, offset, v, size, false)
     }
 
-    fn memop_disass(&mut self, baseva: i64) -> Option<i64> {
+    fn memop_disass(&mut self, baseva: i64) -> Result<i64, Exception> {
         self.memop_general(Execute, baseva, 0, 0, 4, true)
     }
 
@@ -809,7 +804,7 @@ impl Cpu {
         v: i64,
         size: i64,
         side_effect_free: bool,
-    ) -> Option<i64> {
+    ) -> Result<i64, Exception> {
         let va = baseva.wrapping_add(offset);
 
         if va & 0xfff > 0x1000 - size {
@@ -818,18 +813,9 @@ impl Cpu {
             return self.memop_slow(access, va, v, size, side_effect_free);
         }
 
-        let pa = match self
+        let pa = self
             .mmu
-            .translate_address(va as u64, access, side_effect_free)
-        {
-            Ok(pa) => pa as i64,
-            Err(trap) => {
-                if !side_effect_free {
-                    self.handle_exception(&trap);
-                }
-                return None;
-            }
-        };
+            .translate_address(va as u64, access, side_effect_free)? as i64;
 
         let Ok(slice) = self.mmu.memory.slice(pa, size as usize) else {
             return self.memop_slow(access, va, v, size, side_effect_free);
@@ -838,13 +824,13 @@ impl Cpu {
         match access {
             Write => {
                 slice.copy_from_slice(&i64::to_le_bytes(v)[0..size as usize]);
-                None
+                Ok(0)
             }
             Read | Execute => {
                 // Unsigned, sign extension is the job of the consumer
                 let mut buf = [0; 8];
                 buf[0..size as usize].copy_from_slice(slice);
-                Some(i64::from_le_bytes(buf))
+                Ok(i64::from_le_bytes(buf))
             }
         }
     }
@@ -858,7 +844,7 @@ impl Cpu {
         mut v: i64,
         size: i64,
         side_effect_free: bool,
-    ) -> Option<i64> {
+    ) -> Result<i64, Exception> {
         let trap = match access {
             Read => Trap::LoadAccessFault,
             Write => Trap::StoreAccessFault,
@@ -867,16 +853,9 @@ impl Cpu {
 
         let mut r: u64 = 0;
         for i in 0..size {
-            let pa = match self
+            let pa = self
                 .mmu
-                .translate_address((va + i) as u64, access, side_effect_free)
-            {
-                Ok(pa) => pa,
-                Err(trap) => {
-                    self.handle_exception(&trap);
-                    return None;
-                }
-            };
+                .translate_address((va + i) as u64, access, side_effect_free)?;
 
             let mut b = 0;
             if let Ok(slice) = self.mmu.memory.slice(pa as i64, 1) {
@@ -886,20 +865,18 @@ impl Cpu {
                 }
             } else {
                 if side_effect_free {
-                    return None;
+                    return Ok(0);
                 }
 
                 match access {
                     Write => {
-                        let Ok(()) = self.mmu.store_mmio_u8(pa as i64, v as u8) else {
-                            self.handle_exception(&Exception { trap, tval: va + 1 });
-                            return None;
-                        };
+                        if self.mmu.store_mmio_u8(pa as i64, v as u8).is_err() {
+                            return Err(Exception { trap, tval: va + 1 });
+                        }
                     }
                     Read | Execute => {
                         let Ok(w) = self.mmu.load_mmio_u8(pa) else {
-                            self.handle_exception(&Exception { trap, tval: va + 1 });
-                            return None;
+                            return Err(Exception { trap, tval: va + 1 });
                         };
                         b = w;
                     }
@@ -908,11 +885,7 @@ impl Cpu {
             r |= u64::from(b) << (i * 8);
             v >>= 8;
         }
-        if access == Write {
-            None
-        } else {
-            Some(r as i64)
-        }
+        if access == Write { Ok(0) } else { Ok(r as i64) }
     }
 }
 
@@ -1446,10 +1419,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |cpu, _address, word| {
             let f = parse_format_i(word);
             let s1 = cpu.read_x(f.rs1);
-            if let Some(v) = cpu.memop(Read, s1, f.imm, 0, 1) {
-                let v = v as i8 as i64;
-                cpu.write_x(f.rd, v);
-            }
+            let v = cpu.memop(Read, s1, f.imm, 0, 1)? as i8 as i64;
+            cpu.write_x(f.rd, v);
             Ok(())
         },
         disassemble: dump_format_i_mem,
@@ -1461,10 +1432,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |cpu, _address, word| {
             let f = parse_format_i(word);
             let s1 = cpu.read_x(f.rs1);
-            if let Some(v) = cpu.memop(Read, s1, f.imm, 0, 2) {
-                let v = v as i16 as i64;
-                cpu.write_x(f.rd, v);
-            }
+            let v = cpu.memop(Read, s1, f.imm, 0, 2)? as i16 as i64;
+            cpu.write_x(f.rd, v);
             Ok(())
         },
         disassemble: dump_format_i_mem,
@@ -1476,9 +1445,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |cpu, _address, word| {
             let f = parse_format_i(word);
             let s1 = cpu.read_x(f.rs1);
-            if let Some(v) = cpu.memop(Read, s1, f.imm, 0, 4) {
-                cpu.write_x(f.rd, v as i32 as i64);
-            }
+            let v = cpu.memop(Read, s1, f.imm, 0, 4)?;
+            cpu.write_x(f.rd, v as i32 as i64);
             Ok(())
         },
         disassemble: dump_format_i_mem,
@@ -1490,9 +1458,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |cpu, _address, word| {
             let f = parse_format_i(word);
             let s1 = cpu.read_x(f.rs1);
-            if let Some(v) = cpu.memop(Read, s1, f.imm, 0, 1) {
-                cpu.write_x(f.rd, v);
-            }
+            let v = cpu.memop(Read, s1, f.imm, 0, 1)?;
+            cpu.write_x(f.rd, v);
             Ok(())
         },
         disassemble: dump_format_i_mem,
@@ -1504,9 +1471,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |cpu, _address, word| {
             let f = parse_format_i(word);
             let s1 = cpu.read_x(f.rs1);
-            if let Some(v) = cpu.memop(Read, s1, f.imm, 0, 2) {
-                cpu.write_x(f.rd, v);
-            }
+            let v = cpu.memop(Read, s1, f.imm, 0, 2)?;
+            cpu.write_x(f.rd, v);
             Ok(())
         },
         disassemble: dump_format_i_mem,
@@ -1519,7 +1485,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             let f = parse_format_s(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
-            cpu.memop(Write, s1, f.imm, s2, 1);
+            let _ = cpu.memop(Write, s1, f.imm, s2, 1)?;
             Ok(())
         },
         disassemble: dump_format_s,
@@ -1532,7 +1498,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             let f = parse_format_s(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
-            cpu.memop(Write, s1, f.imm, s2, 2);
+            let _ = cpu.memop(Write, s1, f.imm, s2, 2)?;
             Ok(())
         },
         disassemble: dump_format_s,
@@ -1545,7 +1511,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             let f = parse_format_s(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
-            cpu.memop(Write, s1, f.imm, s2, 4);
+            let _ = cpu.memop(Write, s1, f.imm, s2, 4)?;
             Ok(())
         },
         disassemble: dump_format_s,
@@ -1820,9 +1786,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |cpu, _address, word| {
             let f = parse_format_i(word);
             let s1 = cpu.read_x(f.rs1);
-            if let Some(v) = cpu.memop(Read, s1, f.imm, 0, 4) {
-                cpu.write_x(f.rd, v);
-            }
+            let v = cpu.memop(Read, s1, f.imm, 0, 4)?;
+            cpu.write_x(f.rd, v);
             Ok(())
         },
         disassemble: dump_format_i_mem,
@@ -1834,9 +1799,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
         operation: |cpu, _address, word| {
             let f = parse_format_i(word);
             let s1 = cpu.read_x(f.rs1);
-            if let Some(v) = cpu.memop(Read, s1, f.imm, 0, 8) {
-                cpu.write_x(f.rd, v);
-            }
+            let v = cpu.memop(Read, s1, f.imm, 0, 8)?;
+            cpu.write_x(f.rd, v);
             Ok(())
         },
         disassemble: dump_format_i_mem,
@@ -1849,7 +1813,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             let f = parse_format_s(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
-            cpu.memop(Write, s1, f.imm, s2, 8);
+            let _ = cpu.memop(Write, s1, f.imm, s2, 8)?;
             Ok(())
         },
         disassemble: dump_format_s,
@@ -2712,9 +2676,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             let f = parse_format_i(word);
             cpu.check_float_access(0)?;
             let s1 = cpu.read_x(f.rs1);
-            if let Some(v) = cpu.memop(Read, s1, f.imm, 0, 4) {
-                cpu.write_f(f.rd, v | fp::NAN_BOX_F32);
-            }
+            let v = cpu.memop(Read, s1, f.imm, 0, 4)?;
+            cpu.write_f(f.rd, v | fp::NAN_BOX_F32);
             Ok(())
         },
         disassemble: dump_format_i_mem,
@@ -3142,9 +3105,8 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             let f = parse_format_i(word);
             cpu.check_float_access(0)?;
             let s1 = cpu.read_x(f.rs1);
-            if let Some(v) = cpu.memop(Read, s1, f.imm, 0, 8) {
-                cpu.write_f(f.rd, v);
-            }
+            let v = cpu.memop(Read, s1, f.imm, 0, 8)?;
+            cpu.write_f(f.rd, v);
             Ok(())
         },
         disassemble: dump_format_i,
@@ -3622,11 +3584,10 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             if cpu.mmu.prv == PrivMode::U
                 || cpu.mmu.prv == PrivMode::S && cpu.mmu.mstatus & MSTATUS_TSR != 0
             {
-                cpu.handle_exception(&Exception {
+                return Err(Exception {
                     trap: Trap::IllegalInstruction,
                     tval: word as i64,
                 });
-                return Ok(());
             }
 
             cpu.npc = cpu.read_csr(Csr::Sepc as u16)? as i64;
@@ -3654,21 +3615,13 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             if cpu.mmu.prv == PrivMode::U
                 || cpu.mmu.prv == PrivMode::S && cpu.mmu.mstatus & MSTATUS_TVM != 0
             {
-                cpu.handle_exception(&Exception {
+                return Err(Exception {
                     trap: Trap::IllegalInstruction,
                     tval: word as i64,
                 });
-            } else {
-                /*
-                    if f.rs1 == 0 {
-                    // tlb_flush_all(s);
-                } else {
-                    // tlb_flush_vaddr(s, read_reg(rs1));
-                }
-                     */
-
-                /* the current code TLB may have been flushed */
             }
+
+            cpu.mmu.clear_page_cache();
             cpu.reservation = None;
             Ok(())
         },
@@ -3688,13 +3641,12 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             if cpu.mmu.prv == PrivMode::U
                 || cpu.mmu.prv == PrivMode::S && cpu.mmu.mstatus & MSTATUS_TW != 0
             {
-                cpu.handle_exception(&Exception {
+                return Err(Exception {
                     trap: Trap::IllegalInstruction,
                     tval: word as i64,
                 });
-            } else {
-                cpu.wfi = true;
             }
+            cpu.wfi = true;
             Ok(())
         },
         disassemble: dump_empty,
