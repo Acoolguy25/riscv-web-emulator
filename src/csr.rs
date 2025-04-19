@@ -19,6 +19,7 @@ pub enum Csr {
     Sideleg = 0x103,
     Sie = 0x104,
     Stvec = 0x105,
+    Csr106 = 0x106,
     Sscratch = 0x140,
     Sepc = 0x141,
     Scause = 0x142,
@@ -31,6 +32,7 @@ pub enum Csr {
     Mideleg = 0x303,
     Mie = 0x304,
     Mtvec = 0x305,
+    Csr306 = 0x306,
     Menvcfg = 0x30a, // Unsupported Mostly Just Configure S Access To Timecmp
     Mscratch = 0x340,
     Mepc = 0x341,
@@ -178,5 +180,7 @@ pub const fn legal(csr: Csr) -> bool {
             | Csr::Ustatus
             | Csr::Utval
             | Csr::Utvec
+            | Csr::Csr106
+            | Csr::Csr306
     )
 }
