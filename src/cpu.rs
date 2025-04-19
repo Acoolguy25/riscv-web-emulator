@@ -3647,7 +3647,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
-            cpu.write_x(f.rd, s1.wrapping_add(s2 & 0xffffffff));
+            cpu.write_x(f.rd, s2.wrapping_add(s1 & 0xffffffff));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -3660,7 +3660,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
-            cpu.write_x(f.rd, s1.wrapping_add(s2 << 1));
+            cpu.write_x(f.rd, s2.wrapping_add(s1 << 1));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -3673,7 +3673,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
-            cpu.write_x(f.rd, s1.wrapping_add((s2 & 0xffffffff) << 1));
+            cpu.write_x(f.rd, s2.wrapping_add((s1 & 0xffffffff) << 1));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -3686,7 +3686,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
-            cpu.write_x(f.rd, s1.wrapping_add(s2 << 2));
+            cpu.write_x(f.rd, s2.wrapping_add(s1 << 2));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -3699,7 +3699,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
-            cpu.write_x(f.rd, s1.wrapping_add((s2 & 0xffffffff) << 2));
+            cpu.write_x(f.rd, s2.wrapping_add((s1 & 0xffffffff) << 2));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -3712,7 +3712,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
-            cpu.write_x(f.rd, s1.wrapping_add(s2 << 3));
+            cpu.write_x(f.rd, s2.wrapping_add(s1 << 3));
             Ok(())
         },
         disassemble: dump_format_r,
@@ -3725,7 +3725,7 @@ const INSTRUCTIONS: [Instruction; INSTRUCTION_NUM] = [
             let f = parse_format_r(word);
             let s1 = cpu.read_x(f.rs1);
             let s2 = cpu.read_x(f.rs2);
-            cpu.write_x(f.rd, s1.wrapping_add((s2 & 0xffffffff) << 3));
+            cpu.write_x(f.rd, s2.wrapping_add((s1 & 0xffffffff) << 3));
             Ok(())
         },
         disassemble: dump_format_r,
