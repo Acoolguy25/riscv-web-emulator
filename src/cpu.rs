@@ -584,7 +584,7 @@ impl Cpu {
                 self.csr[Csr::Mie as usize] |= value & 0x222;
             }
             Csr::Sip => {
-                let mask = self.csr[Csr::Mideleg as usize];
+                let mask = 0x222;
                 self.mmu.mip = value & mask | self.mmu.mip & !mask;
             }
             Csr::Mip => {
