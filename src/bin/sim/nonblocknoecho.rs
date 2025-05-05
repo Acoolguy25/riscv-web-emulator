@@ -7,9 +7,10 @@ pub struct NonblockNoEcho {
 }
 
 impl NonblockNoEcho {
+    #[allow(clippy::expect_used, clippy::unwrap_used)]
     pub fn new(capture_ctrlc: bool) -> Self {
         use std::os::unix::io::AsRawFd;
-        use termios::*;
+        use termios::{ECHO, ICANON, ISIG, TCSANOW, Termios, tcsetattr};
         let stdin: i32 = std::io::stdin().as_raw_fd();
         assert_eq!(stdin, 0);
 
@@ -18,7 +19,7 @@ impl NonblockNoEcho {
             libc::fcntl(stdin, libc::F_SETFL, flags | libc::O_NONBLOCK);
         }
 
-        let orig_termios = Termios::from_fd(stdin).unwrap();
+        let orig_termios = Termios::from_fd(stdin).expect("Termio::from_fd(stdin)");
 
         let mut termios = orig_termios;
         termios.c_lflag &= !(ECHO | ICANON); // no echo and canonical mode
@@ -48,16 +49,15 @@ impl NonblockNoEcho {
 
     pub fn get_key(&mut self) -> Option<u8> {
         let mut buffer = [0; 1]; // read exactly one byte
-        if let Ok(n) = self.reader.read(&mut buffer) {
+        self.reader.read(&mut buffer).map_or(None, |n| {
             assert!(n == 1);
             Some(buffer[0])
-        } else {
-            None
-        }
+        })
     }
 }
 
 impl Drop for NonblockNoEcho {
+    #[allow(clippy::expect_used, clippy::unwrap_used)]
     fn drop(&mut self) {
         // reset the stdin to original termios data
         termios::tcsetattr(self.stdin, termios::TCSANOW, &self.orig_termios).unwrap();

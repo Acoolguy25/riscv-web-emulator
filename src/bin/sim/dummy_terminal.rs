@@ -1,4 +1,4 @@
-use std::io::{stdout, Write};
+use std::io::{Write, stdout};
 use std::str;
 
 use simmerv::terminal::Terminal;
@@ -8,8 +8,8 @@ use simmerv::terminal::Terminal;
 pub struct DummyTerminal {}
 
 impl DummyTerminal {
-    pub fn new() -> Self {
-        DummyTerminal {}
+    pub const fn new() -> Self {
+        Self {}
     }
 }
 
@@ -18,10 +18,10 @@ impl Terminal for DummyTerminal {
         let str = vec![value];
         match str::from_utf8(&str) {
             Ok(s) => {
-                print!("{}", s);
+                print!("{s}");
             }
             Err(_e) => {}
-        };
+        }
         let _ = stdout().flush();
     }
 

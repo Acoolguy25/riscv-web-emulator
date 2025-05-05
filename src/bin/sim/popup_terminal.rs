@@ -9,7 +9,7 @@ pub struct PopupTerminal {
 
 impl PopupTerminal {
     pub fn new() -> Self {
-        PopupTerminal {
+        Self {
             input: NonblockNoEcho::new(false), // Don't catch ctrl-C  ... for now
         }
     }
@@ -20,6 +20,7 @@ impl Terminal for PopupTerminal {
         print!("{}", value as char);
     }
 
+    #[allow(clippy::expect_used, clippy::unwrap_used)]
     fn get_input(&mut self) -> u8 {
         let stdout: Stdout = io::stdout();
         stdout.lock().flush().unwrap();

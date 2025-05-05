@@ -19,7 +19,7 @@ jobs:
     - name: Build
       run: cargo build -r --all --verbose
     - name: test one
-      run: RUST_BACKTRACE=1 (cd cli;cargo run -- ../riscv-tests/passes/rv64ui-p-simple)
+      run: cargo r -q --bin sim -- riscv-tests/passes/rv64ui-p-simple
     - name: Run tests
       run: cargo test --all --verbose
     - name: Run riscv-tests

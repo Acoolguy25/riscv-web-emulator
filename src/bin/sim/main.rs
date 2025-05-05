@@ -5,8 +5,8 @@ mod popup_terminal;
 use crate::dummy_terminal::DummyTerminal;
 use crate::popup_terminal::PopupTerminal;
 use getopts::Options;
-use simmerv::terminal::Terminal;
 use simmerv::Emulator;
+use simmerv::terminal::Terminal;
 use std::env;
 use std::fs::File;
 use std::io::Read;
@@ -16,12 +16,12 @@ enum TerminalType {
     DummyTerminal,
 }
 
-fn print_usage(program: &str, opts: Options) {
-    let usage = format!("Usage: {} program_file [options]", program);
+fn print_usage(program: &str, opts: &Options) {
+    let usage = format!("Usage: {program} program_file [options]");
     print!("{}", opts.usage(&usage));
 }
 
-fn get_terminal(terminal_type: TerminalType) -> Box<dyn Terminal> {
+fn get_terminal(terminal_type: &TerminalType) -> Box<dyn Terminal> {
     match terminal_type {
         TerminalType::PopupTerminal => Box::new(PopupTerminal::new()),
         TerminalType::DummyTerminal => Box::new(DummyTerminal::new()),
@@ -49,20 +49,20 @@ fn main() -> std::io::Result<()> {
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
         Err(f) => {
-            println!("{}", f);
-            print_usage(&program, opts);
+            println!("{f}");
+            print_usage(&program, &opts);
             // @TODO: throw error?
             return Ok(());
         }
     };
 
     if matches.opt_present("h") {
-        print_usage(&program, opts);
+        print_usage(&program, &opts);
         return Ok(());
     }
 
     if args.len() < 2 {
-        print_usage(&program, opts);
+        print_usage(&program, &opts);
         // @TODO: throw error?
         return Ok(());
     }
@@ -94,15 +94,16 @@ fn main() -> std::io::Result<()> {
     let mut elf_contents = vec![];
     elf_file.read_to_end(&mut elf_contents)?;
 
-    let terminal_type = match matches.opt_present("n") {
-        true => {
-            println!("No popup terminal mode. Output will be flushed on your terminal but you can not input.");
-            TerminalType::DummyTerminal
-        }
-        false => TerminalType::PopupTerminal,
+    let terminal_type = if matches.opt_present("n") {
+        println!(
+            "No popup terminal mode. Output will be flushed on your terminal but input is disabled"
+        );
+        TerminalType::DummyTerminal
+    } else {
+        TerminalType::PopupTerminal
     };
 
-    let mut emulator = Emulator::new(get_terminal(terminal_type));
+    let mut emulator = Emulator::new(get_terminal(&terminal_type));
     emulator.setup_program(elf_contents);
     emulator.setup_filesystem(fs_contents);
     if has_dtb {
