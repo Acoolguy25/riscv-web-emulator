@@ -95,9 +95,6 @@ fn main() -> std::io::Result<()> {
     elf_file.read_to_end(&mut elf_contents)?;
 
     let terminal_type = if matches.opt_present("n") {
-        println!(
-            "No popup terminal mode. Output will be flushed on your terminal but input is disabled"
-        );
         TerminalType::DummyTerminal
     } else {
         TerminalType::PopupTerminal
