@@ -18,6 +18,8 @@ jobs:
     - uses: actions/checkout@v4
     - name: Build
       run: cargo build -r --all --verbose
+    - name: test one
+      run: RUST_BACKTRACE=1 cargo run -- riscv-tests/passes/rv64ui-p-simple
     - name: Run tests
       run: cargo test --all --verbose
     - name: Run riscv-tests
