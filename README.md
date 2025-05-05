@@ -1,3 +1,5 @@
+[![Rust](https://github.com/tommythorn/simmerv/actions/workflows/rust.yml/badge.svg)](https://github.com/tommythorn/simmerv/actions/workflows/rust.yml)
+
 # Simmerv
 
 Simmerv is a [RISC-V](https://riscv.org/) SoC emulator written in Rust
