@@ -17,6 +17,8 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Build
-      run: cargo build --all --verbose
+      run: cargo build -r --all --verbose
     - name: Run tests
       run: cargo test --all --verbose
+    - name: Run riscv-tests
+      run: ./run-riscv-tests.sh
