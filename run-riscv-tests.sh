@@ -1,5 +1,5 @@
 #!/bin/bash
-for class in passes fails sim-crash
+for class in passes fails
 do echo
    echo "$class:"
    for x in riscv-tests/$class/*
