@@ -20,6 +20,17 @@ const VIRTQ_DESC_F_WRITE: u16 = 2;
 
 const SECTOR_SIZE: usize = 512;
 
+// Feature bits for virtio block device
+const VIRTIO_BLK_F_BLK_SIZE: u64 = 6; // Block size of disk is available
+const VIRTIO_BLK_F_FLUSH: u64 = 9; // Cache flush command support
+const VIRTIO_BLK_F_TOPOLOGY: u64 = 10; // Device exports information on optimal I/O alignment
+const VIRTIO_BLK_F_CONFIG_WCE: u64 = 11; // Device can toggle its cache between writeback and writethrough modes
+const VIRTIO_BLK_F_DISCARD: u64 = 13; // Device can support discard command
+const VIRTIO_BLK_F_WRITE_ZEROES: u64 = 14; // Device can support write zeroes command
+
+// Default block size in bytes
+const DEFAULT_BLOCK_SIZE: u32 = 512;
+
 /// Emulates Virtio Block device. Refer to the [specification](https://docs.oasis-open.org/virtio/virtio/v1.1/csprd01/virtio-v1.1-csprd01.html)
 /// for the detail. It follows legacy API.
 pub struct VirtioBlockDisk {
@@ -27,7 +38,7 @@ pub struct VirtioBlockDisk {
     cycle: u64,
     device_features: u64,      // read only
     device_features_sel: u32,  // write only
-    driver_features: u32,      // write only
+    driver_features: u64,      // write only
     _driver_features_sel: u32, // write only
     guest_page_size: u32,      // write only
     queue_select: u32,         // write only
@@ -39,6 +50,8 @@ pub struct VirtioBlockDisk {
     status: u32,               // read and write
     notify_cycles: Vec<u64>,
     contents: Vec<u8>,
+    block_size: u32, // Block size in bytes
+    writeback: bool, // Cache mode (true = writeback, false = writethrough)
 }
 
 impl Default for VirtioBlockDisk {
@@ -55,7 +68,12 @@ impl VirtioBlockDisk {
         Self {
             used_ring_index: 0,
             cycle: 0,
-            device_features: 0,
+            device_features: (1 << VIRTIO_BLK_F_BLK_SIZE)
+                | (1 << VIRTIO_BLK_F_FLUSH)
+                | (1 << VIRTIO_BLK_F_TOPOLOGY)
+                | (1 << VIRTIO_BLK_F_CONFIG_WCE)
+                | (1 << VIRTIO_BLK_F_DISCARD)
+                | (1 << VIRTIO_BLK_F_WRITE_ZEROES),
             device_features_sel: 0,
             driver_features: 0,
             _driver_features_sel: 0,
@@ -68,7 +86,9 @@ impl VirtioBlockDisk {
             status: 0,
             interrupt_status: 0,
             notify_cycles: Vec::new(),
-            contents: Vec::new(), // XXX Storing the image in memory is extremely limiting
+            contents: Vec::new(),
+            block_size: DEFAULT_BLOCK_SIZE,
+            writeback: false,
         }
     }
 
@@ -111,7 +131,6 @@ impl VirtioBlockDisk {
     /// * `address`
     #[allow(clippy::match_same_arms, clippy::cast_possible_truncation)]
     pub fn load(&mut self, address: u64) -> u8 {
-        //println!("Disk Load AD:{:X}", address);
         match address {
             // Magic number: 0x74726976
             0x10001000 => 0x76,
@@ -158,12 +177,26 @@ impl VirtioBlockDisk {
             0x10001071 => (self.status >> 8) as u8,
             0x10001072 => (self.status >> 16) as u8,
             0x10001073 => (self.status >> 24) as u8,
-            // Configurations (The first 64-it is the number of sectors) @TODO: Implement properly
+            // Configurations
             0x10001100..=0x10001107 => {
-                let n_secs: u64 = self.contents.len() as u64 / 512;
+                let n_secs: u64 = self.contents.len() as u64 / u64::from(self.block_size);
                 let n_secs_as_u8: [u8; 8] = n_secs.to_le_bytes();
                 n_secs_as_u8[address as usize & 7]
             }
+            // Block size configuration
+            0x10001108..=0x1000110B => {
+                let block_size_as_u8: [u8; 4] = self.block_size.to_le_bytes();
+                block_size_as_u8[address as usize & 3]
+            }
+            // Topology configuration
+            0x1000110C..=0x10001113 => {
+                // Optimal I/O alignment in sectors
+                let alignment: u64 = 1; // Default to 1 sector alignment
+                let alignment_as_u8: [u8; 8] = alignment.to_le_bytes();
+                alignment_as_u8[address as usize & 7]
+            }
+            // Writeback configuration
+            0x10001114 => u8::from(self.writeback),
             _ => 0,
         }
     }
@@ -177,7 +210,6 @@ impl VirtioBlockDisk {
     /// Will panic if multi queue are attempted enabled (XXX should probably just ignore)
     #[allow(clippy::cast_lossless, clippy::too_many_lines)]
     pub fn store(&mut self, address: u64, value: u8) {
-        //println!("Disk Store AD:{:X} VAL:{:X}", address, value);
         match address {
             0x10001014 => {
                 self.device_features_sel = (self.device_features_sel & !0xff) | (value as u32);
@@ -195,19 +227,35 @@ impl VirtioBlockDisk {
                     (self.device_features_sel & !(0xff << 24)) | ((value as u32) << 24);
             }
             0x10001020 => {
-                self.driver_features = (self.driver_features & !0xff) | (value as u32);
+                self.driver_features = (self.driver_features & !0xff) | (value as u64);
             }
             0x10001021 => {
                 self.driver_features =
-                    (self.driver_features & !(0xff << 8)) | ((value as u32) << 8);
+                    (self.driver_features & !(0xff << 8)) | ((value as u64) << 8);
             }
             0x10001022 => {
                 self.driver_features =
-                    (self.driver_features & !(0xff << 16)) | ((value as u32) << 16);
+                    (self.driver_features & !(0xff << 16)) | ((value as u64) << 16);
             }
             0x10001023 => {
                 self.driver_features =
-                    (self.driver_features & !(0xff << 24)) | ((value as u32) << 24);
+                    (self.driver_features & !(0xff << 24)) | ((value as u64) << 24);
+            }
+            0x10001024 => {
+                self.driver_features =
+                    (self.driver_features & !(0xff << 32)) | ((value as u64) << 32);
+            }
+            0x10001025 => {
+                self.driver_features =
+                    (self.driver_features & !(0xff << 40)) | ((value as u64) << 40);
+            }
+            0x10001026 => {
+                self.driver_features =
+                    (self.driver_features & !(0xff << 48)) | ((value as u64) << 48);
+            }
+            0x10001027 => {
+                self.driver_features =
+                    (self.driver_features & !(0xff << 56)) | ((value as u64) << 56);
             }
             0x10001028 => {
                 self.guest_page_size = (self.guest_page_size & !0xff) | (value as u32);
@@ -309,6 +357,11 @@ impl VirtioBlockDisk {
             }
             0x10001073 => {
                 self.status = (self.status & !(0xff << 24)) | ((value as u32) << 24);
+            }
+            0x10001114 => {
+                if (self.driver_features & (1 << VIRTIO_BLK_F_CONFIG_WCE)) != 0 {
+                    self.writeback = value != 0;
+                }
             }
             _ => {}
         }
@@ -428,16 +481,6 @@ impl VirtioBlockDisk {
             .wrapping_add((u64::from(self.used_ring_index) % queue_size) * 2);
         let desc_head_index = u64::from(memory.read_u16(desc_index_address)) % queue_size;
 
-        /*
-        println!("Desc AD:{:X}", base_desc_address);
-        println!("Avail AD:{:X}", base_avail_address);
-        println!("Used AD:{:X}", base_used_address);
-        println!("Avail flag:{:X}", _avail_flag);
-        println!("Avail index:{:X}", _avail_index);
-        println!("Used ring index:{:X}", self.used_ring_index);
-        println!("Desc head index:{:X}", desc_head_index);
-        */
-
         let mut _blk_type = 0;
         let mut _blk_reserved = 0;
         let mut blk_sector = 0;
@@ -451,33 +494,11 @@ impl VirtioBlockDisk {
             desc_next =
                 u64::from(memory.read_u16(desc_element_address.wrapping_add(14))) % queue_size;
 
-            /*
-            println!("Desc addr:{:X}", desc_addr);
-            println!("Desc len:{:X}", desc_len);
-            println!("Desc flags:{:X}", desc_flags);
-            println!("Desc next:{:X}", desc_next);
-            */
-
-            // Assuming address in memory equals to or greater than DRAM_BASE.
             match desc_num {
                 0 => {
-                    // First descriptor: Block description
-                    // struct virtio_blk_req {
-                    //   uint32 type;
-                    //   uint32 reserved;
-                    //   uint64 sector;
-                    // }
-
-                    // Read/Write operation can be distinguished with the second descriptor flags
-                    // so we can ignore blk_type?
                     _blk_type = memory.read_u32(desc_addr);
                     _blk_reserved = memory.read_u32(desc_addr.wrapping_add(4));
                     blk_sector = memory.read_u64(desc_addr.wrapping_add(8)) as usize;
-                    /*
-                    println!("Blk type:{:X}", _blk_type);
-                    println!("Blk reserved:{:X}", _blk_reserved);
-                    println!("Blk sector:{:X}", blk_sector);
-                    */
                 }
                 1 => {
                     // Second descriptor: Read/Write disk
