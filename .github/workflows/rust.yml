@@ -19,7 +19,7 @@ jobs:
     - name: Build
       run: cargo build -r --all
     - name: test one
-      run: cargo r -q --bin sim -- riscv-tests/passes/rv64ui-p-simple -n
+      run: cargo r --example sim -q -- riscv-tests/passes/rv64ui-p-simple -n
     - name: Run tests
       run: cargo test --all
     - name: Run riscv-tests
