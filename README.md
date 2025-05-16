@@ -68,8 +68,7 @@ many FP instructions) are not 100% to the spec.
 ## How to run Linux
 
 ```sh
-$ cargo b -r --all
-$ target/release/simmerv_cli linux/fw_payload.elf -f linux/rootfs.img
+$ cargo r --example sim -r -- linux/fw_payload.elf -f linux/rootfs.img
 ```
 
 ## How to run riscv-tests
