@@ -2,7 +2,7 @@
 
 // @TODO: temporal
 const TEST_MEMORY_CAPACITY: usize = 1024 * 1024 * 256;
-const PROGRAM_MEMORY_CAPACITY: usize = 1024 * 1024 * 512; // big enough to run Linux and xv6
+const PROGRAM_MEMORY_CAPACITY: usize = 1024 * 1024 * 256; // big enough to run Linux and xv6
 
 pub mod cpu;
 pub mod csr;
@@ -27,7 +27,7 @@ use fnv::FnvHashMap;
 /// Sample code to run the emulator.
 /// ```ignore
 /// // Creates an emulator with arbitary terminal
-/// let mut emulator = Emulator::new(Box::new(DefaultTerminal::new()));
+/// let mut emulator = Emulator::new(vec![Box::new(DefaultTerminal::new())]);
 /// // Set up program content binary
 /// emulator.setup_program(program_content);
 /// // Set up Filesystem content binary
@@ -58,7 +58,8 @@ impl Emulator {
     /// # Arguments
     /// * `terminal`
     #[must_use]
-    pub fn new(terminal: Box<dyn Terminal>) -> Self {
+    pub fn new(terminal: Vec<Box<dyn Terminal>>) -> Self {
+        // terminal::log_to_browser!("started prgrm with {} terminals: idx {}", terminal.len(), terminal[0].get_idx());
         Self {
             cpu: Cpu::new(terminal),
 
@@ -338,8 +339,8 @@ impl Emulator {
     }
 
     /// Returns mutable reference to `Terminal`.
-    pub fn get_mut_terminal(&mut self) -> &mut Box<dyn Terminal> {
-        self.cpu.get_mut_terminal()
+    pub fn get_mut_terminal(&mut self, idx: u8) -> &mut Box<dyn Terminal> {
+        self.cpu.get_mut_terminal(idx)
     }
 
     /// Returns immutable reference to `Cpu`.
@@ -369,7 +370,7 @@ mod test_emulator {
     use crate::terminal::DummyTerminal;
 
     fn create_emu() -> Emulator {
-        Emulator::new(Box::new(DummyTerminal::new()))
+        Emulator::new(vec![Box::new(DummyTerminal::new())])
     }
 
     #[test]

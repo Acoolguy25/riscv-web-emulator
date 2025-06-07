@@ -327,10 +327,11 @@ export class WasmRiscv {
      *   }
      * }
      * ```
+     * @param {number} idx
      * @returns {number}
      */
-    get_output() {
-        const ret = wasm.wasmriscv_get_output(this.__wbg_ptr);
+    get_output(idx) {
+        const ret = wasm.wasmriscv_get_output(this.__wbg_ptr, idx);
         return ret;
     }
     /**
@@ -339,9 +340,10 @@ export class WasmRiscv {
      * # Arguments
      * * `data` Ascii code byte
      * @param {number} data
+     * @param {number} idx
      */
-    put_input(data) {
-        wasm.wasmriscv_put_input(this.__wbg_ptr, data);
+    put_input(data, idx) {
+        wasm.wasmriscv_put_input(this.__wbg_ptr, data, idx);
     }
     /**
      * Enables or disables page cache optimization.
@@ -372,6 +374,22 @@ export class WasmRiscv {
         var ptr1 = passArray8ToWasm0(error, wasm.__wbindgen_malloc);
         var len1 = WASM_VECTOR_LEN;
         const ret = wasm.wasmriscv_get_address_of_symbol(this.__wbg_ptr, ptr0, len0, ptr1, len1, error);
+        return BigInt.asUintN(64, ret);
+    }
+    /**
+     * Gets virtual address corresponding to symbol strings.
+     *
+     * # Arguments
+     * * `va`    Virtual address of address to access
+     * `error` If symbol is not found
+     * @param {bigint} va
+     * @param {Uint8Array} error
+     * @returns {bigint}
+     */
+    load_doubleword(va, error) {
+        var ptr0 = passArray8ToWasm0(error, wasm.__wbindgen_malloc);
+        var len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmriscv_load_doubleword(this.__wbg_ptr, va, ptr0, len0, error);
         return BigInt.asUintN(64, ret);
     }
 }
@@ -410,6 +428,12 @@ async function __wbg_load(module, imports) {
 function __wbg_get_imports() {
     const imports = {};
     imports.wbg = {};
+    imports.wbg.__wbg_log_1ae1e9f741096e91 = function(arg0, arg1) {
+        console.log(arg0, arg1);
+    };
+    imports.wbg.__wbg_log_c222819a41e063d3 = function(arg0) {
+        console.log(arg0);
+    };
     imports.wbg.__wbg_now_807e54c39636c349 = function() {
         const ret = Date.now();
         return ret;
@@ -426,6 +450,10 @@ function __wbg_get_imports() {
         table.set(offset + 2, true);
         table.set(offset + 3, false);
         ;
+    };
+    imports.wbg.__wbindgen_string_new = function(arg0, arg1) {
+        const ret = getStringFromWasm0(arg0, arg1);
+        return ret;
     };
     imports.wbg.__wbindgen_throw = function(arg0, arg1) {
         throw new Error(getStringFromWasm0(arg0, arg1));

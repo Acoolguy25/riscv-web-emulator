@@ -1,0 +1,51 @@
+<!-- Emulator Overview — Informational Section -->
+<article class="emulator-overview">
+
+  <header>
+    <h2>RISC-V Emulator Overview</h2>
+    <p>
+      This emulator is a WebAssembly-based RISC-V RV64 platform that I developed to run a monolithic kernel and user applications directly in a modern browser.  
+      It builds upon the <a href="https://github.com/tommythorn/simmerv" target="_blank" rel="noopener noreferrer">Simmerv project by Tommy Thorn</a>, which itself is a fork of 
+      <a href="https://github.com/takahirox/riscv-rust" target="_blank" rel="noopener noreferrer">Takahiro’s riscv-rust repository</a>.
+    </p>
+  </header>
+
+  <section>
+    <h3>Key Enhancements and Features I Added</h3>
+    <ul>
+      <li><strong>Multiple UART screens:</strong> I expanded support to three UART terminals, enabling simultaneous multi-screen output instead of just one.</li>
+      <li><strong>Kernel printing support:</strong> I added direct kernel log output visible in the browser’s developer console for easier debugging.</li>
+      <li><strong>Real-Time Clock (RTC):</strong> I integrated an RTC device emulation to provide current time to applications.</li>
+      <li><strong>Small patches:</strong> I applied various bug fixes and incremental improvements to enhance stability and usability.</li>
+      <li><strong>Legacy compatibility:</strong> Throughout, I maintained core design and performance optimizations inherited from the original projects.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h3>Technical Highlights</h3>
+    <ul>
+      <li>Runs fully inside the browser using WebAssembly, delivering near-native performance.</li>
+      <li>Implements multiple MMIO devices like UART, CLINT, PLIC, VirtIO block device, RNG, and RTC.</li>
+      <li>Supports Sv39 virtual memory with full paging and protection for kernel and user processes.</li>
+      <li>Designed for smooth integration with the Rust-based kernel and user programs I developed.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h3>About Sharing My Kernel Code</h3>
+    <p>
+      Due to the ECE 391 course policy that prohibits publicly posting kernel source code to avoid academic dishonesty, I’m not able to share my full kernel source here.  
+      However, I’m happy to discuss architecture, design decisions, and emulator features while respecting these guidelines.
+    </p>
+  </section>
+
+  <section>
+    <h3>Explore the Emulator Source</h3>
+    <p>
+      If you’re interested in the emulator itself, you can check out the code and its history here:  
+      <a href="https://github.com/tommythorn/simmerv" target="_blank" rel="noopener noreferrer">Simmerv by Tommy Thorn</a>, and the original base at  
+      <a href="https://github.com/takahirox/riscv-rust" target="_blank" rel="noopener noreferrer">riscv-rust by Takahiro</a>.
+    </p>
+  </section>
+
+</article>

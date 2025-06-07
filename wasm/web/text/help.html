@@ -1,0 +1,125 @@
+<!-- Among OS Shell — Interactive Help Page -->
+<article class="shell-help">
+
+  <header>
+    <h2>Among OS Shell Help</h2>
+    <p>Your prompt appears as <code>&lt;cwd&gt;$</code> (current working directory).  
+       <br>Press <kbd>Ctrl + C</kbd> (Control + C) at any time to terminate all foreground processes.</p>
+  </header>
+
+  <!-- ────────────────────────── -->
+  <section>
+    <h3>Quick Start</h3>
+    <ol>
+      <li>Enter a command, then press <kbd>Enter</kbd>.</li>
+      <li>Use piping and redirection with Unix-standard operators:
+        <ul>
+          <li><strong>Pipe commands:</strong> <code>cmd1 | cmd2</code></li>
+          <li><strong>Input redirection:</strong> <code>cmd &lt; file</code></li>
+          <li><strong>Output redirection:</strong> <code>cmd &gt; file</code></li>
+        </ul>
+      </li>
+      <li><strong>Command history navigation:</strong> Use <kbd>↑</kbd> and <kbd>↓</kbd> arrow keys to cycle through previously entered commands.</li>
+    </ol>
+  </section>
+
+  <!-- ────────────────────────── -->
+  <section>
+    <h3>Supported Commands</h3>
+    <ul class="cmd-grid">
+      <li><code>cat</code></li>
+      <li><code>cd</code></li>
+      <li><code>cp</code></li>
+      <li><code>date</code></li>
+      <li><code>diff</code></li>
+      <li><code>edit</code></li>
+      <li><code>grep</code></li>
+      <li><code>ls</code></li>
+      <li><code>mv</code></li>
+      <li><code>rm</code></li>
+      <li><code>spawn</code></li>
+      <li><code>time</code></li>
+      <li><code>touch</code></li>
+      <li><code>run</code></li>
+    </ul>
+
+    <p>Additional meta-commands:</p>
+    <ul>
+      <li><code>help</code> – Displays an existential “Nobody is going to save you” message.</li>
+      <li><code>commands</code> – Lists all available commands.</li>
+      <li><code>games</code> – Lists available games (see below).</li>
+      <li><code>clear</code> – Clears the terminal screen.</li>
+      <li><code>exit</code> – Exits the shell.</li>
+      <li><code>info</code> – Kernel and system information.</li>
+    </ul>
+  </section>
+
+  <!-- ────────────────────────── -->
+  <section>
+    <h3>Piping and Command Chaining</h3>
+    <p>The shell supports Unix-standard piping and file redirection operators <code>|</code>, <code>&lt;</code>, and <code>&gt;</code> for chaining commands and I/O:</p>
+<pre><code># Count text files in directory
+ls | grep ".txt" | wc
+
+# Sort unique lines in a file
+cat notes.txt | sort | uniq
+
+# Redirect output to a file
+echo "Hello World" &gt; greeting.txt
+
+# Use file as input
+sort &lt; unsorted.txt</code></pre>
+  </section>
+
+  <!-- ────────────────────────── -->
+  <section>
+    <h3>Process Control</h3>
+    <ul>
+      <li><strong>Forking:</strong> Each command runs in its own isolated process with kernel memory protection.</li>
+      <li><strong>Interrupting:</strong> Pressing <kbd>Ctrl + C</kbd> terminates <em>all</em> running processes immediately.</li>
+      <li>The shell waits for all processes in a pipeline to complete before returning to the prompt.</li>
+    </ul>
+  </section>
+
+  <!-- ────────────────────────── -->
+  <section>
+    <h3>Device and I/O Handling</h3>
+    <p>Standard input/output are mapped to UART 0 by default. You can redirect streams to files or other devices using pipes or redirection:</p>
+<pre><code># Save directory listing to a file
+ls &gt; listing.txt
+
+# Run commands from a script file
+run &lt; script.sh</code></pre>
+  </section>
+
+  <!-- ────────────────────────── -->
+  <section>
+    <h3>Available Games</h3>
+    <p>Launch games directly by typing their names:</p>
+    <ul>
+      <li><strong>zork</strong> – Text-based adventure</li>
+      <li><strong>rogue</strong> – Dungeon crawler (<kbd>h j k l</kbd> to move, <kbd>f</kbd> to fight, <kbd>Ctrl + S</kbd> to save)</li>
+      <li><strong>pacman</strong> – Classic arcade game (WASD to move)</li>
+      <li><strong>applewars</strong> – Collect apples while avoiding enemies (WASD + <kbd>Space</kbd> to fire)</li>
+      <li><strong>invaders</strong> – Space invaders clone (<kbd>a</kbd>/<kbd>d</kbd> to move, <kbd>Space</kbd> to shoot)</li>
+    </ul>
+  </section>
+
+  <!-- ────────────────────────── -->
+  <section>
+    <h3>Screen and Kernel Limits</h3>
+    <ul>
+      <li>Kernel-supported screen size: <strong>32 rows × 140 columns</strong>.</li>
+      <li>Maximum 10 executables and 10 arguments per command pipeline.</li>
+    </ul>
+  </section>
+
+  <!-- ────────────────────────── -->
+  <footer>
+    <blockquote>
+      “Nobody is in this world to save you.”<br>
+      <cite>— Desiree Peralta</cite>
+    </blockquote>
+  </footer>
+
+</article>

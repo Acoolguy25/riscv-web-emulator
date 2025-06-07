@@ -1,6 +1,8 @@
 #![allow(clippy::unreadable_literal)]
+#![allow(unused_imports)]
 
 use crate::terminal::Terminal;
+use crate::terminal;
 
 const IER_RXINT_BIT: u8 = 0x1;
 const IER_THREINT_BIT: u8 = 0x2;
@@ -27,12 +29,14 @@ pub struct Uart {
     thre_ip: bool,
     interrupting: bool,
     terminal: Box<dyn Terminal>,
+    #[allow(dead_code)]
+    idx: u8,
 }
 
 impl Uart {
     /// Creates a new `Uart`. Input/Output data is transferred via `Terminal`.
     #[must_use]
-    pub fn new(terminal: Box<dyn Terminal>) -> Self {
+    pub fn new(terminal: Box<dyn Terminal>, idx: u8) -> Self {
         Self {
             clock: 0,
             rbr: 0,
@@ -46,6 +50,7 @@ impl Uart {
             thre_ip: false,
             interrupting: false,
             terminal,
+            idx,
         }
     }
 
@@ -110,9 +115,10 @@ impl Uart {
     ///
     /// # Arguments
     /// * `address`
-    pub const fn load(&mut self, address: u64) -> u8 {
-        //println!("UART Load AD:{:X}", address);
-        match address {
+    pub fn load(&mut self, address: u64) -> u8 {
+        // terminal::log_to_browser!("Accesss 0x{:X}", address);
+        let address_mod: u64 = address % 0x200 + 0x10000000;
+        match address_mod {
             0x10000000 => {
                 if (self.lcr >> 7) == 0 {
                     let rbr = self.rbr;
@@ -146,11 +152,13 @@ impl Uart {
     /// * `address`
     /// * `value`
     pub fn store(&mut self, address: u64, value: u8) {
-        //println!("UART Store AD:{:X} VAL:{:X}", address, value);
-        match address {
+        let address_mod: u64 = address % 0x200 + 0x10000000;
+        // terminal::log_to_browser!("UART Store 0x{:X} 0x{:X} at idx {}", address, address_mod, self.idx);
+        match address_mod {
             // Transfer Holding Register
             0x10000000 => {
                 if (self.lcr >> 7) == 0 {
+                    // terminal::log_to_browser!("with idx {}", self.idx);
                     self.terminal.put_byte(value);
                 }
             }

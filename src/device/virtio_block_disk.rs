@@ -1,6 +1,7 @@
 #![allow(clippy::unreadable_literal)]
 
 use crate::mmu::Memory;
+use crate::terminal;
 
 // Based on Virtual I/O Device (VIRTIO) Version 1.1
 // https://docs.oasis-open.org/virtio/virtio/v1.1/csprd01/virtio-v1.1-csprd01.html
@@ -105,6 +106,7 @@ impl VirtioBlockDisk {
     #[allow(clippy::cast_lossless)]
     pub fn init(&mut self, contents: Vec<u8>) {
         self.contents = contents;
+        terminal::log_to_browser!("VirtioBlockDisk: disk image size = {}", self.contents.len());
     }
 
     /// Runs one cycle. Data transfer between main memory and block device
@@ -131,6 +133,7 @@ impl VirtioBlockDisk {
     /// * `address`
     #[allow(clippy::match_same_arms, clippy::cast_possible_truncation)]
     pub fn load(&mut self, address: u64) -> u8 {
+        // terminal::log_to_browser!("Accesss 0x{:X}", address);
         match address {
             // Magic number: 0x74726976
             0x10001000 => 0x76,
@@ -469,6 +472,7 @@ impl VirtioBlockDisk {
     // @TODO: Follow the virtio block specification more propertly.
     #[allow(clippy::cast_possible_truncation)]
     fn handle_disk_access(&mut self, memory: &mut Memory) {
+        
         let base_desc_address = self.get_base_desc_address();
         let base_avail_address = self.get_base_avail_address();
         let base_used_address = self.get_base_used_address();

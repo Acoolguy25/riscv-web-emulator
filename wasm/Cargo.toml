@@ -10,6 +10,7 @@ repository = "http://github.com/tommythorn/simmerv"
 [dependencies]
 wasm-bindgen = "*"
 simmerv = {path = "../"}
+web-sys = "*"
 
 [lib]
 name = "simmerv_wasm"

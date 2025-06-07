@@ -29,17 +29,22 @@ if (!('BigUint64Array' in window)) {
     return Number('0x' + uint64HexStr.slice(0, 8));
   };
 
-  const convertToUint64HexStrings = str => {
-    if (isNaN(Number(str))) {
-      throw new Error('Invalid format. ' + str);
-    }
-    // Assuming non-hex representation is in Number.MAX_SAFE_INTEGER
-    if (str.slice(0, 2).toLowerCase() !== '0x') {
-      str = '0x' + Number(str).toString(16);
-    }
-    return ('0000000000000000' + str.slice(2)).slice(-16);
-  };
+  const convertToUint64HexString = (input) => {
+    const str = String(input).trim();
 
+    let value;
+    try {
+      value = BigInt(str);
+    } catch {
+      throw new Error(`Invalid integer literal: “${input}”`);
+    }
+
+    if (value < 0n || value > 0xffff_ffff_ffff_ffffn) {
+      throw new RangeError(`Value outside unsigned-64 range: ${input}`);
+    }
+
+    return value.toString(16).padStart(16, '0');
+  };
   // Assuming BigInt also isn't supported if BigUint64Array isn't supported
   window.BigInt = str => {
     return convertToUint64HexStrings(str);
@@ -132,9 +137,11 @@ const u8s_to_strings = u8s => {
 };
 
 export default class App {
-  constructor(riscv, terminal, options = {}) {
+  constructor(riscv, terminals, options = {}) {
     this.riscv = riscv;
-    this.terminal = terminal;
+    this.activeTerminalIndex = 0;
+    this.terminals = terminals; // support array or single
+    this.activeTerminalIndex = 0; // default to first terminal
     this.debugModeEnabled = options.debugModeEnabled !== undefined ? options.debugModeEnabled : false;
     this.runCyclesNum = options.runCyclesNum !== undefined ? options.runCyclesNum : 0x10000;
     this.inDebugMode = false;
@@ -144,16 +151,27 @@ export default class App {
     this._setupInputEventHandlers();
   }
 
+  get terminal() {
+    // Always use the currently active terminal
+    return this.terminals[this.activeTerminalIndex];
+  }
+
   _setupInputEventHandlers() {
-    this.terminal.onKey(event => {
-      if (this.inDebugMode) {
-        this._handleKeyInputInDebugMode(event.key, event.domEvent.keyCode);
-      } else {
-        this._handleKeyInput(event.key, event.domEvent.keyCode);
-      }
+    // Add event handlers for all terminals
+    this.terminals.forEach((term, idx) => {
+      term.onKey(event => {
+        if (this.activeTerminalIndex != idx){
+          return;
+        }
+        // Optional: switch active terminal on input
+        if (this.inDebugMode) {
+          this._handleKeyInputInDebugMode(event.key, event.domEvent.keyCode);
+        } else {
+          this._handleKeyInput(event.key, event.domEvent.keyCode);
+        }
+      });
     });
-    // I don't know why but terminal.onKey doesn't catch
-    // space key so handling in document keydown event listener.
+    // Space key (for all terminals)
     document.addEventListener('keydown', event => {
       if (event.keyCode === 32) {
         if (this.inDebugMode) {
@@ -165,6 +183,16 @@ export default class App {
       event.preventDefault();
     });
   }
+
+  setActiveTerminal(idx) {
+    const old = this.activeTerminalIndex;
+    if (idx >= 0 && idx < this.terminals.length) {
+      this.activeTerminalIndex = idx;
+    }
+    return old;
+  }
+
+
 
   _handleKeyInput(key, keyCode) {
     if (this.debugModeEnabled && key.charCodeAt(0) === 1) { // Ctrl-A
@@ -446,7 +474,7 @@ export default class App {
       this.riscv.run_cycles(this.runCyclesNum);
       this.flush();
       while (this.inputs.length > 0) {
-        this.riscv.put_input(this.inputs.shift());
+        this.riscv.put_input(this.inputs.shift(), this.activeTerminalIndex);
       }
     };
 
@@ -496,7 +524,7 @@ export default class App {
     const data = this.riscv.load_doubleword(vAddress, error);
     switch (error[0]) {
       case 0:
-        this.terminal.writeln('0x' + data.toString(16));
+        this.terminal.writeln('0x' + data.toString(16).toUpperCase());
         break;
       case 1:
         this.terminal.writeln('Page fault.');
@@ -520,11 +548,11 @@ export default class App {
       this.terminal.writeln('Register number should be 0-31.');
       return;
     }
-    this.terminal.writeln('0x' + this.riscv.read_register(regNum).toString(16));
+    this.terminal.writeln('0x' + this.riscv.read_register(regNum).toString(16).toUpperCase());
   }
 
   displayPCContent() {
-    this.terminal.writeln('0x' + this.riscv.read_pc().toString(16));
+    this.terminal.writeln('0x' + this.riscv.read_pc().toString(16).toUpperCase());
   }
 
   setBreakpoint(arg) {
@@ -549,7 +577,7 @@ export default class App {
       return;
     }
     this.breakpoints.push(vAddress);
-    this.terminal.writeln('Breakpoint is set at 0x' + vAddress.toString(16));
+    this.terminal.writeln('Breakpoint is set at 0x' + vAddress.toString(16).toUpperCase());
   }
 
   deleteBreakpoint(vAddressStr) {
@@ -569,23 +597,26 @@ export default class App {
 
   displayBreakpoints() {
     for (const b of this.breakpoints) {
-      this.terminal.writeln('0x' + b.toString(16));
+      this.terminal.writeln('0x' + b.toString(16).toUpperCase());
     }
   }
 
   flush() {
-    const outputBytes = [];
-    while (true) {
-      const data = this.riscv.get_output();
-      if (data !== 0) {
-        outputBytes.push(data);
-      } else {
-        break;
+    for (const [idx, term] of this.terminals.entries()) {
+          const outputBytes = [];
+          while (true) {
+            const data = this.riscv.get_output(idx);
+            if (data !== 0) {
+              outputBytes.push(data);
+            } else {
+              break;
+            }
+          }
+          if (outputBytes.length > 0) {
+            // console.log("write " + bytes.length + " to idx " + idx)
+            term.write(u8s_to_strings(outputBytes));
+          }
       }
-    }
-    if (outputBytes.length > 0) {
-      this.terminal.write(u8s_to_strings(outputBytes));
-    }
   }
 
   startDebugMode() {

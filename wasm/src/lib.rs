@@ -1,7 +1,10 @@
-use simmerv::Emulator;
+#[allow(unused_imports)]
+use simmerv::{terminal, Emulator};
 use simmerv::default_terminal::DefaultTerminal;
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
+use std::panic::{catch_unwind, AssertUnwindSafe};
+
 
 /// `WasmRiscv` is an interface between user JavaScript code and
 /// WebAssembly RISC-V emulator. The following code is example
@@ -44,6 +47,8 @@ use wasm_bindgen::prelude::*;
 /// };
 /// runCycles();
 /// ```
+
+
 #[wasm_bindgen]
 pub struct WasmRiscv {
     emulator: Emulator,
@@ -55,7 +60,7 @@ impl WasmRiscv {
     #[allow(clippy::new_without_default)] // #[wasm_bindgen] trait impls are not supported
     pub fn new() -> Self {
         WasmRiscv {
-            emulator: Emulator::new(Box::new(DefaultTerminal::new())),
+            emulator: Emulator::new(vec![Box::new(DefaultTerminal::new()), Box::new(DefaultTerminal::new()), Box::new(DefaultTerminal::new())]),
         }
     }
 
@@ -143,7 +148,7 @@ impl WasmRiscv {
             table.insert(breakpoint as i64, true);
         }
         for _i in 0..max_cycles {
-            self.emulator.tick(40);
+            self.emulator.tick(1);
             let pc = self.emulator.get_cpu().read_pc();
             if table.contains_key(&pc) {
                 return true;
@@ -160,7 +165,7 @@ impl WasmRiscv {
         let _wbr = cpu.disassemble(&mut s);
         let bytes = s.as_bytes();
         for &b in bytes {
-            self.emulator.get_mut_terminal().put_byte(b);
+            self.emulator.get_mut_terminal(0).put_byte(b);
         }
     }
 
@@ -193,16 +198,16 @@ impl WasmRiscv {
     ///   }
     /// }
     /// ```
-    pub fn get_output(&mut self) -> u8 {
-        self.emulator.get_mut_terminal().get_output()
+    pub fn get_output(&mut self, idx: u8) -> u8 {
+        self.emulator.get_mut_terminal(idx).get_output()
     }
 
     /// Puts ascii code byte sent from terminal to the emulator.
     ///
     /// # Arguments
     /// * `data` Ascii code byte
-    pub fn put_input(&mut self, data: u8) {
-        self.emulator.get_mut_terminal().put_input(data);
+    pub fn put_input(&mut self, data: u8, idx: u8) {
+        self.emulator.get_mut_terminal(idx).put_input(data);
     }
 
     /// Enables or disables page cache optimization.
@@ -229,6 +234,44 @@ impl WasmRiscv {
             }
             None => {
                 error[0] = 1;
+                0
+            }
+        }
+    }
+    
+    /// Gets virtual address corresponding to symbol strings.
+    ///
+    /// # Arguments
+    /// * `va`    Virtual address of address to access
+    /// `error` If symbol is not found
+    pub fn load_doubleword(&mut self, va: u64, error: &mut [u8]) -> u64 {
+        // pessimistically assume failure
+        if let Some(flag) = error.get_mut(0) {
+            *flag = 1;
+        }
+
+        // Any panic in the closure is caught here instead of crashing the page.
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            self.emulator
+                .get_mut_cpu()
+                .get_mut_mmu()
+                .load_virt_u64(va)
+        }));
+
+        match result {
+            // ✔ No panic and the MMU returned a value
+            Ok(Ok(val)) => {
+                if let Some(flag) = error.get_mut(0) {
+                    *flag = 0;   // success
+                }
+                val
+            }
+
+            // ✖ No panic, but MMU returned an Err — propagate sentinel
+            Ok(Err(_)) => 0,
+
+            // ✖ Panic occurred (MMU bug, unwrap, etc.) — log and propagate sentinel
+            Err(_panic_payload) => {
                 0
             }
         }

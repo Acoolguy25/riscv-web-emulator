@@ -1,0 +1,36 @@
+<!-- RISC-V OS & Shell Demonstration (ECE 391) -->
+<div class="rvos-demo">
+  <h3>Kernel & Shell</h3>
+  <ul>
+    <li><strong>UNIX-style commands</strong>: <code>ls</code>, <code>cd</code>, <code>mv</code>, <code>cp</code>, <code>cat</code>, <code>...</code></li>
+    <li>Pipelining with the <code>|</code> <code><</code> <code>></code> operators</li>
+    <li>ELF executable loader</li>
+    <li><kbd>Ctrl + C</kbd> terminates all active processes</li>
+    <li>Ext2-inspired file-system implemented with block cache</li>
+  </ul>
+
+  <h3>Process Management</h3>
+  <ul>
+    <li>POSIX-like <em>fork</em> support</li>
+    <li>Isolated user address spaces with kernel protection</li>
+    <li>Shared access to character and block devices</li>
+  </ul>
+
+  <h3>Device Drivers</h3>
+  <ul>
+    <li>Serial consoles: UART 0 (Screen 1), UART 1 (Screen 2), UART 2 (Screen 3)</li>
+    <li>Platform-Level Interrupt Controller (PLIC)</li>
+    <li>Real-Time Clock (RTC)</li>
+    <li>VirtIO-MMIO block device</li>
+    <li>VirtIO random number generator (viorng)</li>
+    <li>Kernel log output visible in the browser’s developer console</li>
+  </ul>
+
+  <h3>Additional Components</h3>
+  <ul>
+    <li>Pre-emptive threading driven by timer interrupts</li>
+    <li>High-resolution timer subsystem</li>
+    <li>Port of the <code>ncurses</code> text-UI library</li>
+  </ul>
+
+</div>

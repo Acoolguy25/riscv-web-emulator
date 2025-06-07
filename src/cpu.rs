@@ -82,7 +82,7 @@ impl Cpu {
     /// * `Terminal`
     #[must_use]
     #[allow(clippy::precedence)]
-    pub fn new(terminal: Box<dyn Terminal>) -> Self {
+    pub fn new(terminal: Vec<Box<dyn Terminal>>) -> Self {
         let mut patterns = Vec::new();
         for (p, insn) in INSTRUCTIONS[0..INSTRUCTION_NUM - 1].iter().enumerate() {
             patterns.push((insn.mask & !3, insn.bits & !3, p));
@@ -675,8 +675,8 @@ impl Cpu {
     }
 
     /// Returns mutable `Terminal`
-    pub fn get_mut_terminal(&mut self) -> &mut Box<dyn Terminal> {
-        self.mmu.get_mut_uart().get_mut_terminal()
+    pub fn get_mut_terminal(&mut self, idx: u8) -> &mut Box<dyn Terminal> {
+        self.mmu.get_mut_uart(idx).get_mut_terminal()
     }
 
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]

@@ -1,6 +1,8 @@
 #![allow(clippy::unreadable_literal)]
+#![allow(unused_imports)]
 
 use crate::cpu::{MIP_MEIP, MIP_SEIP};
+use crate::terminal;
 
 // Based on SiFive Interrupt Cookbook
 // https://sifive.cdn.prismic.io/sifive/0d163928-2128-42be-a75a-464df65e04e0_sifive-interrupt-cookbook.pdf
@@ -20,7 +22,10 @@ pub struct Plic {
 
 // @TODO: IRQ numbers should be configurable with device tree
 const VIRTIO_IRQ: u32 = 1;
-const UART_IRQ: u32 = 10;
+const UART_FIRST_IRQ: u32 = 10;
+#[allow(dead_code)]
+const UART_COUNT: usize = 3;
+// const UART_IRQ: u32 = 10;
 
 impl Default for Plic {
     fn default() -> Self {
@@ -52,7 +57,7 @@ impl Plic {
     /// * `virtio_ip`
     /// * `uart_ip`
     /// * `mip`
-    pub fn service(&mut self, virtio_ip: bool, uart_ip: bool, mip: &mut u64) {
+    pub fn service(&mut self, virtio_ip: bool, uart_ip: &[bool], mip: &mut u64) {
         // Handling interrupts as "Edge-triggered" interrupt so far
 
         // Our VirtIO disk implements an interrupt as "Level-triggered" and
@@ -67,9 +72,14 @@ impl Plic {
 
         // Our Uart implements an interrupt as "Edge-triggered" and
         // uart_ip is true only at the cycle when an interrupt happens
-        if uart_ip {
-            self.set_ip(UART_IRQ);
+        for (i, &ip) in uart_ip.iter().enumerate() {
+            if ip {
+                self.set_ip(UART_FIRST_IRQ + i as u32); // or UART_FIRST_IRQ + i
+            }
         }
+        // else{
+            // terminal::log_to_browser!("uart interrupt serviced but not connected!");
+        // }
 
         if self.needs_update_irq {
             self.update_irq(mip);
@@ -78,39 +88,36 @@ impl Plic {
     }
 
     fn update_irq(&mut self, mip: &mut u64) {
-        // Hardcoded VirtIO and UART
-        // @TODO: Should be configurable with device tree
+        let mut best_irq   = 0;
+        let mut best_prio  = 0;
 
-        let virtio_ip = ((self.ips[(VIRTIO_IRQ >> 3) as usize] >> (VIRTIO_IRQ & 7)) & 1) == 1;
-        let uart_ip = ((self.ips[(UART_IRQ >> 3) as usize] >> (UART_IRQ & 7)) & 1) == 1;
+        // Helper closure: true if this irq line is pending AND enabled
+        let consider = |irq: u32, me: &Plic, best_prio: &mut u32, best_irq: &mut u32| {
+            let ip       = ((me.ips[(irq >> 3) as usize] >> (irq & 7)) & 1) == 1;
+            let priority = me.priorities[irq as usize];
+            let enabled  = ((me.enabled >> irq) & 1) == 1;
 
-        // Which should be prioritized, virtio or uart?
-
-        let virtio_priority = self.priorities[VIRTIO_IRQ as usize];
-        let uart_priority = self.priorities[UART_IRQ as usize];
-
-        let virtio_enabled = ((self.enabled >> VIRTIO_IRQ) & 1) == 1;
-        let uart_enabled = ((self.enabled >> UART_IRQ) & 1) == 1;
-
-        let ips = [virtio_ip, uart_ip];
-        let enables = [virtio_enabled, uart_enabled];
-        let priorities = [virtio_priority, uart_priority];
-        let irqs = [VIRTIO_IRQ, UART_IRQ];
-
-        let mut irq = 0;
-        let mut priority = 0;
-        for i in 0..2 {
-            if ips[i] && enables[i] && priorities[i] > self.threshold && priorities[i] > priority {
-                irq = irqs[i];
-                priority = priorities[i];
+            if ip && enabled && priority > me.threshold && priority > *best_prio {
+                *best_prio = priority;
+                *best_irq  = irq;
             }
+        };
+
+        // Check VirtIO
+        consider(VIRTIO_IRQ, self, &mut best_prio, &mut best_irq);
+
+        // Check every UART
+        for i in 0..UART_COUNT {
+            let irq = UART_FIRST_IRQ + i as u32;
+            consider(irq, self, &mut best_prio, &mut best_irq);
         }
 
-        self.irq = irq;
+        // Latch the result and update MIP
+        self.irq = best_irq;
         if self.irq != 0 {
-            *mip |= MIP_MEIP | MIP_SEIP;
+            *mip |= MIP_MEIP | MIP_SEIP;      // raise external interrupt
         } else {
-            *mip &= !MIP_MEIP & !MIP_SEIP;
+            *mip &= !(MIP_MEIP | MIP_SEIP);   // clear it
         }
     }
 
@@ -132,8 +139,8 @@ impl Plic {
     /// * `address`
     #[allow(clippy::cast_possible_truncation)]
     #[must_use]
-    pub const fn load(&self, address: u64) -> u8 {
-        //println!("PLIC Load AD:{:X}", address);
+    pub fn load(&self, address: u64) -> u8 {
+        // terminal::log_to_browser!("PLIC Load AT:{:X}", address);
         match address {
             0x0c000000..=0x0c000fff => {
                 let offset = address % 4;
@@ -172,7 +179,7 @@ impl Plic {
     /// * `value`
     #[allow(clippy::cast_lossless)]
     pub fn store(&mut self, address: u64, value: u8, mip: &mut u64) {
-        //println!("PLIC Store AD:{:X} VAL:{:X}", address, value);
+        // terminal::log_to_browser!("PLIC Store AD:{:X} VAL:{:X}", address, value);
         match address {
             0x0c000000..=0x0c000fff => {
                 let offset = address % 4;

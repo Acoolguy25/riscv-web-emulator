@@ -10,11 +10,16 @@ repository = "https://github.com/tommythorn/simmerv"
 exclude = [
   "linux/*",
   "screenshots/*",
-  "wasm/*"
+  "wasm/*",
+  "simmerv_clone/*",
+  "src2/*"
 ]
 
 [workspace]
 members = [".", "wasm"]
+
+[profile.release]            # and/or [profile.dev] if you want it for debug builds
+panic = "unwind"             # <--- IMPORTANT
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -2 }
@@ -32,12 +37,25 @@ num-traits = "*"
 num-derive = "*"
 wasm-timer = "0.2.5"
 log = "0.4.26"
+js-sys = "0.3"
+console_error_panic_hook = "0.1"
+
+
 
 [dev-dependencies]
 libc = "0.2.155"
 termios = "0.3.3"
 getopts = "0.2"
 env_logger = "0.11.7"
+web-sys = "0.3"
+
+
+[dependencies.web-sys]
+version = "0.3"
+features = [
+    "console",
+]
+
 
 [[example]]
 name = "sim"

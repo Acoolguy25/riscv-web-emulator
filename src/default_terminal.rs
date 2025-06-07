@@ -1,4 +1,6 @@
-use crate::terminal::Terminal;
+use crate::terminal::{Terminal};
+#[allow(unused_imports)]
+use crate::terminal;
 
 /// Standard `Terminal`.
 pub struct DefaultTerminal {
@@ -14,7 +16,7 @@ impl Default for DefaultTerminal {
 
 impl DefaultTerminal {
     #[must_use]
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             input_data: vec![],
             output_data: vec![],
@@ -24,6 +26,7 @@ impl DefaultTerminal {
 
 impl Terminal for DefaultTerminal {
     fn put_byte(&mut self, value: u8) {
+        // terminal::log_to_browser!("idx {}", self.get_idx());
         self.output_data.push(value);
     }
 
@@ -43,7 +46,9 @@ impl Terminal for DefaultTerminal {
         if self.output_data.is_empty() {
             0
         } else {
+            // terminal::log_to_browser!("output w idx {}", self.idx);
             self.output_data.remove(0)
         }
     }
+
 }

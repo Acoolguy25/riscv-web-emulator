@@ -1,186 +1,210 @@
-<html>
-  <head>
-    <meta content="text/html;charset=utf-8" http-equiv="Content-Type" />
-    <link rel="stylesheet" href="xtermjs/xterm.css" />
-    <script src="xtermjs/xterm.js"></script>
-  </head>
-  <body>
-    <script type="module">
-      import App from './App.js';
-      import init, { WasmRiscv } from "./simmerv_wasm.js";
+<!-- index.html – unchanged except for cosmetic spacing -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>RISC-V Demo</title>
 
-      const resourcePath = '../../';
-      const COLUMNS = 80;
-      const MINIMUM_ROWS = 24;
+  <!-- xterm assets (plain script puts Terminal on window) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
 
-      let wasm;
+<script type="importmap">
+{
+  "imports": {
+    "xterm": "https://cdn.jsdelivr.net/npm/xterm@5.3.0/+esm",
+    "xterm-addon-fit": "https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/+esm"
+  }
+}
+</script>
 
-      const runButton = document.getElementById('run-button');
-          const fileSelect = document.getElementById('file-select');
-          const debuggerCheckbox = document.getElementById('debugger-checkbox');
+  <!-- Bootstrap -->
 
-      const terminal = new Terminal();
-      terminal.setOption('cursorBlink', true);
-      terminal.setOption('convertEol', true);
-      terminal.open(document.getElementById('terminal'));
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-ka7Sk0Gln4gmtz2MlQnikT1wXgYsOg+OMhuP+IlRH9sENBO0LRn5q+8nbTov4+1p" crossorigin="anonymous"></script>
+      
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3" crossorigin="anonymous">
 
-      terminal.writeln('Message from Takahiro, the original author of the emulator:');
-      terminal.writeln('');
-      terminal.writeln('This is RISC-V processor emulator written in Rust and compiled to WebAssembly.');
-      terminal.writeln('You can run the RISC-V port of Linux');
-      terminal.writeln('in your browser. Select OS from the list and press Run button.');
-      terminal.writeln('');
-      terminal.writeln('Or you can run your own program. Drag and drop your binary file here.');
-      terminal.writeln('');
-      terminal.writeln('Enjoy RISC-V and Operating System on browser!');
-      terminal.writeln('');
+  <style>
+    body            { background:#121212; color:#eee; }
+    /* .terminal-pane   { width:500px; height:500px} */
 
-      const run = async (elfBuffer, fsBuffer, symbolBuffer, isPresetBinaries) => {
-        const debugMode = debuggerCheckbox.checked;
+    #screen-buttons .active { background:#0d6efd; color:#fff; }
+    .debug-toggle {
+      background-color: #f8f9fa18; /* light gray */
+      padding: 10px 15px;
+      border-radius: 8px;
+      box-shadow: 0 1px 6px rgb(255, 255, 255);
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin-left: 0rem; /* similar to ms-3 */
+      height: 40px;
+    }
 
-        const riscv = WasmRiscv.new();
-        riscv.setup_program(new Uint8Array(elfBuffer));
+    .debug-toggle label {
+      margin: 0;
+      font-weight: 500;
+      user-select: none;
+    }
 
-        if (fsBuffer.byteLength > 0) {
-          riscv.setup_filesystem(new Uint8Array(fsBuffer));
-        }
+    .debug-toggle input[type="checkbox"] {
+      transform: scale(1.2);
+      cursor: pointer;
+    }
 
-        if (symbolBuffer.byteLength > 0) {
-          riscv.load_program_for_symbols(new Uint8Array(symbolBuffer));
-        }
+    .run-demo-container {
+      background-color: #e9f7ef; /* light green tint */
+      padding: 3px 3px;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+      display: inline-block;
+      margin-left: 1rem; /* like ms-3 */
+    }
 
-        // Enable experimental address translation page cache optimization
-        // if booting Linux. Disable this feature if you face
-        // uncertain error.
-        if (isPresetBinaries) {
-          riscv.enable_page_cache(true);
-        }
+    #run-button {
+      font-weight: 600;
+      padding: 6px 14px;
+      font-size: 1rem;
+      border-radius: 6px;
+      min-height: 34px;
+      min-width: 127px;
+      transition: background-color 0.2s, opacity 0.2s;
+      margin: 0px;
+    }
 
-        const app = new App(riscv, terminal, {
-          debugModeEnabled: debugMode
-        });
+    #run-button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
 
-        if (debugMode) {
-          terminal.writeln('Debug mode.');
-          app.startDebugMode();
-        } else {
-          app.run();
-        }
-      };
+    .controls-bar {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 1rem; /* spacing between toggle and button */
+      padding: 0.5rem;
+    }
 
-      // From https://github.com/xtermjs/xterm.js/tree/master/addons/xterm-addon-fit
-      const onResize = event => {
-        // @TODO: Remove reliance on private API
-        const core = terminal._core;
+    .xterm-scroll-area {
+      position: relative; /* or fixed if needed */
+      z-index: 9999 !important;  /* very high to be on top */
+    }
+    .xterm-viewport {
+      z-index: 1; /* or a lower value */
+      position: relative;
+      background: transparent !important;
+    }
+    :fullscreen {
+      width: 100vw;
+      height: 100vh;
+    }
 
-        const parentElementStyle = window.getComputedStyle(terminal.element.parentElement);
-        const parentElementHeight = parseInt(parentElementStyle.getPropertyValue('height'));
-        const elementStyle = window.getComputedStyle(terminal.element);
-        const elementPadding = {
-          top: parseInt(elementStyle.getPropertyValue('padding-top')),
-          bottom: parseInt(elementStyle.getPropertyValue('padding-bottom'))
-        };
-        const elementPaddingVer = elementPadding.top + elementPadding.bottom;
-        const availableHeight = parentElementHeight - elementPaddingVer;
-        const rows = Math.max(MINIMUM_ROWS, Math.floor(availableHeight / core._renderService.dimensions.actualCellHeight));
-        terminal.resize(COLUMNS, /*rows*/ MINIMUM_ROWS);
-      };
+    :-webkit-full-screen {
+      width: 100vw;
+      height: 100vh;
+    }
+    :-moz-full-screen {
+      width: 100vw;
+      height: 100vh;
+    }
+    :-ms-fullscreen {
+      width: 100vw;
+      height: 100vh;
+    }
+  </style>
+</head>
 
-      window.addEventListener('resize', onResize);
-      onResize();
+<body>
+  <div class="container py-4">
 
-      window.addEventListener('dragover', event => {
-        event.preventDefault();
-      });
+    <!---- controls --->
+    <div class="controls-bar" style="display: flex;">
+      <div class="debug-toggle">
+        <input class="form-check-input" type="checkbox" id="debug-checkbox">
+        <label class="form-check-label" for="debug-checkbox">
+          Debugger
+        </label>
+      </div>
+      <div class="run-demo-container">
+        <button id="run-button" class="btn btn-success" disabled>Run Demo</button>
+      </div>
+      <!-- file-select former class: class="form-select d-inline-block w-auto ms-2" -->
+      <select id="file-select"  style="display:none;"> 
+        <option value="./bin/kernel.elf" selected>rshell</option>
+        <option value="linux/fw_payload.elf">Linux + OpenSBI</option>
+        <option value="linux/bbl/bbl">Linux + Legacy BBL</option>
+      </select>
 
-      window.addEventListener('drop', event => {
-        event.preventDefault();
-
-        if (runButton.disabled) {
-          return;
-        }
-
-        runButton.disabled = true;
-        fileSelect.disabled = true;
-        debuggerCheckbox.disabled = true;
-
-        terminal.clear();
-
-        const reader = new FileReader();
-        reader.addEventListener('load', event => {
-          terminal.writeln('Running program.');
-          run(event.target.result, new ArrayBuffer(0), new ArrayBuffer(0), false);
-        });
-        reader.addEventListener('error', error => {
-          terminal.writeln(error.message);
-          runButton.disabled = false;
-          fileSelect.disabled = false;
-          debuggerCheckbox.disabled = false;
-        });
-        reader.readAsArrayBuffer(event.dataTransfer.files[0]);
-        terminal.writeln('Loading program...');
-      });
-
-      const onClick = async event => {
-        runButton.disabled = true;
-        fileSelect.disabled = true;
-        debuggerCheckbox.disabled = true;
-
-        terminal.clear();
-
-        const debugMode = debuggerCheckbox.checked;
-        const selectedOption = fileSelect.selectedOptions[0];
-        const filename = selectedOption.value;
-        const isLinux = filename === 'linux/fw_payload.elf' || filename === 'linux/bbl/bbl';
-
-        terminal.writeln('Downloading files...');
-
-        const elfResponse = await fetch(resourcePath + filename);
-        const elfBuffer = await elfResponse.arrayBuffer();
-
-        let fsBuffer;
-        let symbolBuffer;
-
-        if (isLinux) {
-          const fsResponse = await fetch(resourcePath + 'linux/rootfs.img');
-          fsBuffer = await fsResponse.arrayBuffer();
-          if (debugMode) {
-            const symbolResponse = await fetch(resourcePath + 'linux/vmlinux');
-            symbolBuffer = await symbolResponse.arrayBuffer();
-          } else {
-            symbolBuffer = new ArrayBuffer(0);
-          }
-        } else {
-          runButton.disabled = false;
-          fileSelect.disabled = false;
-          debuggerCheckbox.disabled = false;
-          terminal.writeln('Unknown program.');
-          throw new Error('Unknown program.');
-        }
-
-        terminal.writeln('Done downloading.');
-
-        run(elfBuffer, fsBuffer, symbolBuffer, true);
-      };
-
-      init()
-        .then(_wasm => {
-          wasm = _wasm;
-          runButton.addEventListener('click', onClick);
-          runButton.disabled = false;
-          debuggerCheckbox.disabled = false;
-        })
-        .catch(error => terminal.writeln(error.message));
-    </script>
-    <select id="file-select">
-      <option value="linux/fw_payload.elf" selected>Linux + OpenSBI</option>
-      <option value="linux/bbl/bbl">Linux + Legacy BBL</option>
-    </select>
-    <button id="run-button" disabled>Run</button>
-    <input id="debugger-checkbox" type="checkbox" disabled>Debugger</input>
-    <div id="terminal"></div>
-    <div>
-      <a href="https://risc-v-getting-started-guide.readthedocs.io/en/latest/linux-qemu.html">Linux</a> on <a href="https://github.com/tommythorn/simmerv" target="_blank">RISC-V processor emulator in Rust+WASM</a>
     </div>
-  </body>
+
+
+    <!---- terminal panes --->
+    <div id="terminal-container">
+      <!---- screen picker --->
+      <div id="screen-buttons" style="display: none;">
+        <button class="btn btn-outline-primary active" data-screen="0">Screen&nbsp;1</button>
+        <button class="btn btn-outline-primary"        data-screen="1">Screen&nbsp;2</button>
+        <button class="btn btn-outline-primary"        data-screen="2">Screen&nbsp;3</button>
+        <button class="btn btn-outline-primary" id="fullscreen-button">Fullscreen</button>
+      </div>
+
+      <div id="terminal0" class="terminal-pane" style="display:block;"></div>
+      <div id="terminal1" class="terminal-pane" style="display:block;"></div>
+      <div id="terminal2" class="terminal-pane" style="display:block;"></div>
+    </div>
+  </div>
+
+  <!--- lower information --->
+  <div class="m-4">
+    <ul class="nav nav-pills" id="myTab" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button class="nav-link active" data-bs-toggle="tab"
+                data-bs-target="#about" type="button" role="tab"
+                aria-controls="about" aria-selected="true">
+          About
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" data-bs-toggle="tab"
+                data-bs-target="#help"  type="button" role="tab"
+                aria-controls="help"  aria-selected="false">
+          Help
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" data-bs-toggle="tab"
+                data-bs-target="#riscv" type="button" role="tab"
+                aria-controls="riscv" aria-selected="false">
+          RISC-V
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" data-bs-toggle="tab"
+                data-bs-target="#emulator" type="button" role="tab"
+                aria-controls="emulator" aria-selected="false">
+          Emulator
+        </button>
+      </li>
+    </ul>
+    <br>
+    <div class="tab-content2">
+      <!--  each pane names the file it should pull -->
+      <div class="tab-pane fade show active" id="about"
+          data-src="./text/about.html"></div>
+
+      <div class="tab-pane fade" id="help" style="display: none"
+          data-src="./text/help.html"></div>
+
+      <div class="tab-pane fade" id="riscv" style="display: none"
+          data-src="./text/riscv.html"></div>
+
+      <div class="tab-pane fade" id="emulator" style="display: none"
+          data-src="./text/emulator.html"></div>
+    </div>
+  </div>
+
+
+  <!-- Application entry point -->
+  <script type="module" src="Main.js" defer></script>
+  <script src = "TextSetup.js" defer></script>
+</body>
 </html>

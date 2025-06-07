@@ -5,10 +5,13 @@ use crate::csr;
 use crate::device::clint::Clint;
 use crate::device::plic::Plic;
 use crate::device::uart::Uart;
+use crate::device::rtc::RTC;
 use crate::device::virtio_block_disk::VirtioBlockDisk;
+use crate::device::sys::Sys;
 pub use crate::memory::*;
 use crate::riscv;
 use crate::terminal::Terminal;
+use crate::terminal;
 use cpu::{
     CONFIG_SW_MANAGED_A_AND_D, Exception, MSTATUS_MPP_SHIFT, MSTATUS_MPRV, MSTATUS_MXR,
     MSTATUS_SUM, PG_SHIFT,
@@ -25,6 +28,8 @@ use riscv::MemoryAccessType;
 use riscv::PrivMode;
 use riscv::Trap;
 use riscv::priv_mode_from;
+
+// use std::mem;
 
 const DTB_SIZE: usize = 0xfe0;
 
@@ -45,7 +50,9 @@ pub struct Mmu {
     disk: VirtioBlockDisk,
     plic: Plic,
     clint: Clint,
-    uart: Uart,
+    uart: Vec<Uart>,
+    rtc: RTC,
+    sys: Sys,
 
     /// Address translation page cache.
     /// The cache is cleared when translation mapping can be changed;
@@ -61,6 +68,7 @@ pub struct Mmu {
     store_page_cache: FnvHashMap<u64, u64>,
 }
 
+
 pub const PTE_V_MASK: u64 = 1 << 0;
 pub const PTE_U_MASK: u64 = 1 << 4;
 pub const PTE_A_MASK: u64 = 1 << 6;
@@ -73,12 +81,17 @@ impl Mmu {
     /// * `xlen`
     /// * `terminal`
     #[must_use]
-    pub fn new(terminal: Box<dyn Terminal>) -> Self {
+    pub fn new(terminals: Vec<Box<dyn Terminal>>) -> Self {
         let mut dtb = vec![0; DTB_SIZE];
 
         // Load default device tree binary content
         let content = include_bytes!("./device/dtb.dtb");
         dtb[..content.len()].copy_from_slice(&content[..]);
+
+        let mut uart_list: Vec<Uart> = Vec::new();
+        for (idx, terminal) in terminals.into_iter().enumerate() {
+            uart_list.push(Uart::new(terminal, idx as u8));
+        }
 
         Self {
             prv: PrivMode::M,
@@ -90,7 +103,9 @@ impl Mmu {
             disk: VirtioBlockDisk::new(),
             plic: Plic::new(),
             clint: Clint::new(),
-            uart: Uart::new(terminal),
+            uart: uart_list,
+            rtc: RTC::new(),
+            sys: Sys::new(),
             page_cache_enabled: false,
             fetch_page_cache: FnvHashMap::default(),
             load_page_cache: FnvHashMap::default(),
@@ -141,17 +156,27 @@ impl Mmu {
         self.store_page_cache.clear();
     }
 
-    /// Runs one cycle of MMU and peripheral devices.
     pub fn service(&mut self, cycle: u64) {
+        // --- timers & disk ---------------------------------------------------
         self.clint.service(cycle, &mut self.mip);
         self.disk.service(&mut self.memory, cycle);
-        self.uart.service();
+
+        // --- UARTs -----------------------------------------------------------
+        // Collect one interrupt-pending flag per UART
+        let mut uart_ip: Vec<bool> = Vec::with_capacity(self.uart.len());
+        for uart in &mut self.uart {
+            uart.service();                    // run the UART
+            uart_ip.push(uart.is_interrupting());
+        }
+
+        // --- send all device IRQs to the PLIC -------------------------------
         self.plic.service(
-            self.disk.is_interrupting(),
-            self.uart.is_interrupting(),
-            &mut self.mip,
+            self.disk.is_interrupting(),  // VirtIO-disk level IRQ
+            &uart_ip,                     // slice of UART IRQs
+            &mut self.mip,                // write-back to MIP
         );
     }
+
 
     /// Updates privilege mode
     ///
@@ -182,7 +207,7 @@ impl Mmu {
     /// * `width` Must be 1, 2, 4, or 8
     fn load_virt_bytes(&mut self, va: u64, width: u64) -> Result<u64, Exception> {
         debug_assert!(
-            width == 1 || width == 2 || width == 4 || width == 8,
+            width == 1 || width == 2 || width == 4 || width == 8,   
             "Width must be 1, 2, 4, or 8. {width:X}"
         );
         if va & 0xfff <= 0x1000 - width {
@@ -388,9 +413,17 @@ impl Mmu {
             0x00001020..=0x00001fff => Ok(self.dtb[pa as usize - 0x1020]),
             0x02000000..=0x0200ffff => Ok(self.clint.load(pa)),
             0x0C000000..=0x0fffffff => Ok(self.plic.load(pa)),
-            0x10000000..=0x100000ff => Ok(self.uart.load(pa)),
+            0x10000000..=0x100000ff => Ok(self.uart[0].load(pa)),
+            0x10000100..=0x100001ff => Ok(self.sys.load(pa)), // sys
+            0x10000200..=0x100002ff => Ok(self.uart[1].load(pa)), // uart 2
+            0x10000400..=0x100004ff => Ok(self.uart[2].load(pa)), // uart 3
             0x10001000..=0x10001FFF => Ok(self.disk.load(pa)),
-            _ => Err(()),
+            0x10002000..=0x10002007 => Ok(self.rtc.load(pa)), // rtc
+            
+            _ => {
+                terminal::log_to_browser!("Load failed at {}", pa);
+                Ok(0)
+            },
         }
     }
 
@@ -456,13 +489,22 @@ impl Mmu {
     /// Will return error for access outside supported memory range
     #[allow(clippy::result_unit_err, clippy::cast_sign_loss)]
     pub fn store_mmio_u8(&mut self, pa: i64, value: u8) -> Result<(), ()> {
+        // terminal::log_to_browser!("mmu store 0x{:X} at 0x{:X}, uart: {}", pa, value, self.uart.len());
         let pa = pa as u64;
         match pa {
             0x02000000..=0x0200ffff => self.clint.store(pa, value, &mut self.mip),
             0x0c000000..=0x0fffffff => self.plic.store(pa, value, &mut self.mip),
-            0x10000000..=0x100000ff => self.uart.store(pa, value),
+            0x10000000..=0x100000ff => self.uart[0].store(pa, value),
+            0x10000100..=0x100001ff => self.sys.store(pa, value), // sys
+            0x10000200..=0x100002ff => self.uart[1].store(pa, value), // uart 2
+
+            0x10000400..=0x100004ff => self.uart[2].store(pa, value), // uart 3
             0x10001000..=0x10001FFF => self.disk.store(pa, value),
-            _ => return Err(()),
+            0x10002000..=0x10002007 => self.rtc.store(pa, value), // rtc
+            _ => {
+                terminal::log_to_browser!("Store failed at {}", pa);
+                return Err(())
+            },
         }
         Ok(())
     }
@@ -744,8 +786,8 @@ impl Mmu {
     }
 
     /// Returns mutable reference to `Uart`.
-    pub const fn get_mut_uart(&mut self) -> &mut Uart {
-        &mut self.uart
+    pub fn get_mut_uart(&mut self, idx: u8) -> &mut Uart {
+        &mut self.uart[idx as usize]
     }
 }
 
