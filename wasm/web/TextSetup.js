@@ -12,6 +12,7 @@ async function loadPane(pane) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  const img = document.getElementById("blockImgDiagram")
   /* 1. Pre-fill whatever tab is active on initial load */
   const first = document.querySelector('.tab-pane.active[data-src]');
   if (first) loadPane(first);
@@ -31,6 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
       panes.forEach((value) => {
         value.style.display = value == pane? 'flex': 'none'
       })
+      img.style.display = id == 'about'? "block": "none";
   });
   panes.push(pane);
 });

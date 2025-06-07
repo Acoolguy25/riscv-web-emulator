@@ -80,6 +80,8 @@ impl Mmu {
     /// # Arguments
     /// * `xlen`
     /// * `terminal`
+    /// # Panics
+    /// This function will panic if idx usize converting to u8 fails
     #[must_use]
     pub fn new(terminals: Vec<Box<dyn Terminal>>) -> Self {
         let mut dtb = vec![0; DTB_SIZE];
@@ -90,7 +92,8 @@ impl Mmu {
 
         let mut uart_list: Vec<Uart> = Vec::new();
         for (idx, terminal) in terminals.into_iter().enumerate() {
-            uart_list.push(Uart::new(terminal, idx as u8));
+            #[allow(clippy::unwrap_used)]
+            uart_list.push(Uart::new(terminal, u8::try_from(idx).unwrap()));
         }
 
         Self {

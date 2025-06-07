@@ -58,10 +58,10 @@ impl Emulator {
     /// # Arguments
     /// * `terminal`
     #[must_use]
-    pub fn new(terminal: Vec<Box<dyn Terminal>>) -> Self {
+    pub fn new(terminal: Vec<Box<dyn Terminal>>, start_up_val: i64) -> Self {
         // terminal::log_to_browser!("started prgrm with {} terminals: idx {}", terminal.len(), terminal[0].get_idx());
         Self {
-            cpu: Cpu::new(terminal),
+            cpu: Cpu::new(terminal, start_up_val),
 
             symbol_map: FnvHashMap::default(),
 
@@ -370,7 +370,7 @@ mod test_emulator {
     use crate::terminal::DummyTerminal;
 
     fn create_emu() -> Emulator {
-        Emulator::new(vec![Box::new(DummyTerminal::new())])
+        Emulator::new(vec![Box::new(DummyTerminal::new())], 0)
     }
 
     #[test]

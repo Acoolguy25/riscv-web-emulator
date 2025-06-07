@@ -82,7 +82,7 @@ impl Cpu {
     /// * `Terminal`
     #[must_use]
     #[allow(clippy::precedence)]
-    pub fn new(terminal: Vec<Box<dyn Terminal>>) -> Self {
+    pub fn new(terminal: Vec<Box<dyn Terminal>>, start_up_val: i64) -> Self {
         let mut patterns = Vec::new();
         for (p, insn) in INSTRUCTIONS[0..INSTRUCTION_NUM - 1].iter().enumerate() {
             patterns.push((insn.mask & !3, insn.bits & !3, p));
@@ -114,6 +114,7 @@ impl Cpu {
         cpu.mmu.mstatus = 2 << MSTATUS_UXL_SHIFT | 2 << MSTATUS_SXL_SHIFT | 3 << MSTATUS_MPP_SHIFT;
         cpu.x[10] = 0; // boot hart
         cpu.x[11] = 0x1020; // start of DTB (XXX could put that elsewhere);
+        cpu.x[12] = start_up_val;
         cpu
     }
 
@@ -3793,7 +3794,7 @@ mod test_cpu {
     use crate::terminal::DummyTerminal;
 
     fn create_cpu() -> Cpu {
-        Cpu::new(Box::new(DummyTerminal::new()))
+        Cpu::new(vec![Box::new(DummyTerminal::new())], 0)
     }
 
     #[test]

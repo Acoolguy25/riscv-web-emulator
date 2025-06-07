@@ -11,7 +11,7 @@ const MAX_QUEUE_SIZE: u64 = 0x2000;
 
 // To simulate disk access time.
 // @TODO: Set more proper number. 500 core cycles may be too short.
-const DISK_ACCESS_DELAY: u64 = 500;
+const DISK_ACCESS_DELAY: u64 = 0;
 
 const VIRTQ_DESC_F_NEXT: u16 = 1;
 

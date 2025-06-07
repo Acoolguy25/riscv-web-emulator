@@ -6,7 +6,7 @@ import { FitAddon } from 'xterm-addon-fit';
 /* ---------- constants ---------- */
 const SCREENS     = 3;
 const ROOTFS_PATH = "./bin/ktfs.raw";
-const COLUMNS = 140;
+const COLUMNS = 90;
 const MINIMUM_ROWS = 32;
 let isFullScreen = false;
 let onResize;
@@ -17,6 +17,9 @@ const screenButtons = document.getElementById("screen-buttons")
 const starterButtons = document.getElementsByClassName("controls-bar")[0]
 const termContainer = document.getElementById("terminal-container")
 const fullScreen = document.getElementById("fullscreen-button")
+const divider = document.getElementById("middle-divider")
+const infoContent = document.getElementById("tab-content-info")
+const imgDiagram = document.getElementById('blockImgDiagram')
 
 for (let i = 0; i < SCREENS; i++) {
     const pane = document.getElementById(`terminal${i}`);
@@ -71,8 +74,10 @@ function show(idx) {
     const old = window.app.setActiveTerminal(idx);
     panes[old].style.display = "none";
     panes[idx].style.display = 'flex';
+    panes[idx].setAttribute("tabindex", "0");
+    terms[idx].focus()
+    onResize();
     
-    onResize()
   }
 }
 
@@ -119,6 +124,7 @@ document
 
 /* ---------- run controls ---------- */
 const runBtn  = document.getElementById("run-button");
+const gameBtn = document.getElementById("run-game");
 const fileSel = document.getElementById("file-select");
 const dbgChk  = document.getElementById("debug-checkbox");
 
@@ -126,17 +132,19 @@ let wasmReady = false;
 init().then(() => {
   wasmReady       = true;
   runBtn.disabled = false;
+  gameBtn.disabled = false;
 });
 
-runBtn.onclick = async () => {
+async function startFunc(inputStr){
   if (!wasmReady) return;
   runBtn.disabled = true
   dbgChk.disabled = true
+  gameBtn.disabled = true
 
   const elfBuf = await (await fetch(fileSel.value)).arrayBuffer();
   const fsBuf  = await (await fetch(ROOTFS_PATH)).arrayBuffer();
 
-  const riscv = WasmRiscv.new();
+  const riscv = WasmRiscv.new(inputStr);
   riscv.setup_program(new Uint8Array(elfBuf));
   if (fsBuf.byteLength) riscv.setup_filesystem(new Uint8Array(fsBuf));
 
@@ -154,11 +162,15 @@ runBtn.onclick = async () => {
   terms[0].write("\x1b[?25h")
   // }
   dbgChk.checked ? window.app.startDebugMode() : window.app.run();
+}
+gameBtn.onclick = async () => {
+  startFunc("1");
+}
+runBtn.onclick = async () => {
+  startFunc("0");
 };
 
-// boring resizing
-
-
+// Boring resizing
 // From https://github.com/xtermjs/xterm.js/tree/master/addons/xterm-addon-fit
 onResize = () => {
     const screenButtonsBottom = screenButtons.getBoundingClientRect().bottom;
@@ -176,13 +188,17 @@ onResize = () => {
 
         if (isFullScreen) {
             const rows = Math.floor(availableHeight / rowHeight);
-            term.resize(isNaN(dims.cols)?term.cols:dims.cols,
-            Math.max(MINIMUM_ROWS, rows));
+            term.resize(Math.max(COLUMNS,isNaN(dims.cols)?term.cols:dims.cols),
+              Math.max(MINIMUM_ROWS, rows));
         } else {
-            term.resize(isNaN(dims.cols)?term.cols:dims.cols,
-            MINIMUM_ROWS);
+          term.resize(Math.max(COLUMNS,isNaN(dims.cols)?term.cols:dims.cols),
+              MINIMUM_ROWS);       
         }
     }
+    divider.style.width = termContainer.offsetWidth + "px"
+    infoContent.style.width = Math.max(0, termContainer.offsetWidth) + "px"
+    imgDiagram.style.width = termContainer.offsetWidth + "px"
+    //window.innerWidth * 0.4
 };
 
 window.addEventListener('resize', onResize);

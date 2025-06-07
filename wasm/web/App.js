@@ -179,8 +179,8 @@ export default class App {
         } else {
           this._handleKeyInput(' ', 32);
         }
+        event.preventDefault();
       }
-      event.preventDefault();
     });
   }
 
@@ -188,6 +188,7 @@ export default class App {
     const old = this.activeTerminalIndex;
     if (idx >= 0 && idx < this.terminals.length) {
       this.activeTerminalIndex = idx;
+      this.terminals[idx].focus()
     }
     return old;
   }
@@ -524,7 +525,7 @@ export default class App {
     const data = this.riscv.load_doubleword(vAddress, error);
     switch (error[0]) {
       case 0:
-        this.terminal.writeln('0x' + data.toString(16).toUpperCase());
+        this.terminal.writeln('0x' + data.toString(16).slice(-8).toUpperCase());
         break;
       case 1:
         this.terminal.writeln('Page fault.');
@@ -537,22 +538,30 @@ export default class App {
         break;
     }
   }
-
+  regsToString = ["zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2", "fp", "s1", "a0", "a1",
+                  "a2",   "a3", "a4", "a5", "a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7",
+                  "s8",   "s9", "s10","s11","t3", "t4", "t5", "t6"
+  ];
   displayRegisterContent(regNumStr) {
-    const regNum = parseInt(regNumStr);
+    let regNum = parseInt(regNumStr);
     if (isNaN(regNum)) {
-      this.terminal.writeln('Invalid register number.');
-      return;
+      regNum = (this.regsToString.findIndex((element) => element == regNumStr.toLowerCase()))
+      if (regNum == undefined){
+        this.terminal.writeln('Invalid register number.');
+        return;
+      }
     }
     if (regNum < 0 || regNum > 31) {
       this.terminal.writeln('Register number should be 0-31.');
       return;
     }
-    this.terminal.writeln('0x' + this.riscv.read_register(regNum).toString(16).toUpperCase());
+    const value = this.riscv.read_register(regNum);
+    this.terminal.writeln(this.regsToString[regNum] + '\t0x' + value.toString(16) + '\t' + value.toString(10));
   }
 
   displayPCContent() {
-    this.terminal.writeln('0x' + this.riscv.read_pc().toString(16).toUpperCase());
+    const value = this.riscv.read_pc();
+    this.terminal.writeln('pc:\t0x' + value.toString(16) + '\t' + + value.toString(10));
   }
 
   setBreakpoint(arg) {
@@ -577,7 +586,7 @@ export default class App {
       return;
     }
     this.breakpoints.push(vAddress);
-    this.terminal.writeln('Breakpoint is set at 0x' + vAddress.toString(16).toUpperCase());
+    this.terminal.writeln('Breakpoint is set at 0x' + vAddress.toString(16));
   }
 
   deleteBreakpoint(vAddressStr) {
@@ -597,7 +606,7 @@ export default class App {
 
   displayBreakpoints() {
     for (const b of this.breakpoints) {
-      this.terminal.writeln('0x' + b.toString(16).toUpperCase());
+      this.terminal.writeln('0x' + b.toString(16));
     }
   }
 

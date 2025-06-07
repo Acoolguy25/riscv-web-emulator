@@ -11,15 +11,15 @@ pub struct Sys {
 
 impl Sys {
     #[must_use]
-    pub fn new() -> Self {
-        Sys {
+    pub const fn new() -> Self {
+        Self {
             message: String::new(),
         }
     }
 
     pub fn store(&mut self, _address: u64, value: u8) {
         let c = value as char;
-        if (c == '\n' && self.message.len() == 0) || c == '\r'{
+        if (c == '\n' && self.message.is_empty()) || c == '\r'{
             return;
         }
         if c == '\n' {
@@ -46,7 +46,13 @@ impl Sys {
         }
     }
 
-    pub fn load(&mut self, _address: u64) -> u8 {
+    pub const fn load(&mut self, _address: u64) -> u8 {
         0
+    }
+}
+
+impl Default for Sys {
+    fn default() -> Self {
+        Self::new()
     }
 }

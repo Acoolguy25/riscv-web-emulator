@@ -100,7 +100,7 @@ fn main() -> std::io::Result<()> {
         TerminalType::PopupTerminal
     };
 
-    let mut emulator = Emulator::new(get_terminal(&terminal_type));
+    let mut emulator = Emulator::new(vec![get_terminal(&terminal_type)], 0);
     emulator.setup_program(elf_contents);
     emulator.setup_filesystem(fs_contents);
     if has_dtb {

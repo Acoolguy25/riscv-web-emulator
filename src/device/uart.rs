@@ -115,7 +115,7 @@ impl Uart {
     ///
     /// # Arguments
     /// * `address`
-    pub fn load(&mut self, address: u64) -> u8 {
+    pub const fn load(&mut self, address: u64) -> u8 {
         // terminal::log_to_browser!("Accesss 0x{:X}", address);
         let address_mod: u64 = address % 0x200 + 0x10000000;
         match address_mod {

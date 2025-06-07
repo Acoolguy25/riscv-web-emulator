@@ -57,6 +57,8 @@ impl Plic {
     /// * `virtio_ip`
     /// * `uart_ip`
     /// * `mip`
+    /// # Panics
+    /// Panics if the conversion of an index `i` to `u32` fails in `u32::try_from(i)`.
     pub fn service(&mut self, virtio_ip: bool, uart_ip: &[bool], mip: &mut u64) {
         // Handling interrupts as "Edge-triggered" interrupt so far
 
@@ -74,7 +76,8 @@ impl Plic {
         // uart_ip is true only at the cycle when an interrupt happens
         for (i, &ip) in uart_ip.iter().enumerate() {
             if ip {
-                self.set_ip(UART_FIRST_IRQ + i as u32); // or UART_FIRST_IRQ + i
+                #[allow(clippy::unwrap_used)]
+                self.set_ip(UART_FIRST_IRQ + u32::try_from(i).unwrap()); // or UART_FIRST_IRQ + i
             }
         }
         // else{
@@ -92,6 +95,7 @@ impl Plic {
         let mut best_prio  = 0;
 
         // Helper closure: true if this irq line is pending AND enabled
+        #[allow(clippy::use_self)]
         let consider = |irq: u32, me: &Plic, best_prio: &mut u32, best_irq: &mut u32| {
             let ip       = ((me.ips[(irq >> 3) as usize] >> (irq & 7)) & 1) == 1;
             let priority = me.priorities[irq as usize];
@@ -108,7 +112,8 @@ impl Plic {
 
         // Check every UART
         for i in 0..UART_COUNT {
-            let irq = UART_FIRST_IRQ + i as u32;
+            #[allow(clippy::unwrap_used)]
+            let irq = UART_FIRST_IRQ + u32::try_from(i).unwrap();
             consider(irq, self, &mut best_prio, &mut best_irq);
         }
 
@@ -139,7 +144,7 @@ impl Plic {
     /// * `address`
     #[allow(clippy::cast_possible_truncation)]
     #[must_use]
-    pub fn load(&self, address: u64) -> u8 {
+    pub const fn load(&self, address: u64) -> u8 {
         // terminal::log_to_browser!("PLIC Load AT:{:X}", address);
         match address {
             0x0c000000..=0x0c000fff => {

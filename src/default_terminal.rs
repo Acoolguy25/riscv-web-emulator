@@ -16,7 +16,7 @@ impl Default for DefaultTerminal {
 
 impl DefaultTerminal {
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             input_data: vec![],
             output_data: vec![],

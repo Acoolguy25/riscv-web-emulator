@@ -28,6 +28,7 @@ pub struct Header {
 }
 
 /// ELF program header
+#[allow(clippy::struct_field_names)]
 pub struct ProgramHeader {
     _p_type: u32,
     _p_flags: u32,

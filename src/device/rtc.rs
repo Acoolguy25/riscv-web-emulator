@@ -10,8 +10,8 @@ pub struct RTC;
 
 impl RTC {
     #[must_use]
-    pub fn new() -> Self {
-        RTC
+    pub const fn new() -> Self {
+        Self
     }
 
     /// Load one byte from the 64-bit time value.
@@ -25,7 +25,7 @@ impl RTC {
     }
 
     /// No writes—just ignore them.
-    pub fn store(&mut self, _address: u64, _value: u8) {}
+    pub const fn store(&mut self, _address: u64, _value: u8) {}
 }
 
 // Helper to pick the right source of “now”:
@@ -45,5 +45,11 @@ fn get_time_ns() -> u64 {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_nanos() as u64)
             .unwrap_or(0)
+    }
+}
+
+impl Default for RTC {
+    fn default() -> Self{
+        Self::new()
     }
 }
