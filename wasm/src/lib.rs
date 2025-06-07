@@ -58,9 +58,9 @@ pub struct WasmRiscv {
 impl WasmRiscv {
     /// Creates a new `WasmRiscv`.
     #[allow(clippy::new_without_default)] // #[wasm_bindgen] trait impls are not supported
-    pub fn new(setUpVal: i64) -> Self {
+    pub fn new(set_up_val: i64) -> Self {
         WasmRiscv {
-            emulator: Emulator::new(vec![Box::new(DefaultTerminal::new()), Box::new(DefaultTerminal::new()), Box::new(DefaultTerminal::new())], setUpVal),
+            emulator: Emulator::new(vec![Box::new(DefaultTerminal::new()), Box::new(DefaultTerminal::new()), Box::new(DefaultTerminal::new())], set_up_val),
         }
     }
 

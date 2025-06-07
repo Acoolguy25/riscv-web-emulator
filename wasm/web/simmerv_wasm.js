@@ -171,11 +171,11 @@ export class WasmRiscv {
     }
     /**
      * Creates a new `WasmRiscv`.
-     * @param {bigint} setUpVal
+     * @param {bigint} set_up_val
      * @returns {WasmRiscv}
      */
-    static new(setUpVal) {
-        const ret = wasm.wasmriscv_new(setUpVal);
+    static new(set_up_val) {
+        const ret = wasm.wasmriscv_new(set_up_val);
         return WasmRiscv.__wrap(ret);
     }
     /**

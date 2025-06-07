@@ -198,7 +198,6 @@ onResize = () => {
     divider.style.width = termContainer.offsetWidth + "px"
     infoContent.style.width = Math.max(0, termContainer.offsetWidth) + "px"
     imgDiagram.style.width = termContainer.offsetWidth + "px"
-    //window.innerWidth * 0.4
 };
 
 window.addEventListener('resize', onResize);
