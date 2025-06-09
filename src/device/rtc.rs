@@ -6,20 +6,30 @@
 const RTC_BASE: u64 = 0x1000_2000;
 
 /// A read-only RTC device that hands you the current UNIX time in ns.
-pub struct RTC;
+pub struct RTC{
+    saved_time: u64
+}
 
 impl RTC {
     #[must_use]
     pub const fn new() -> Self {
-        Self
+        Self {
+            saved_time: 0
+        }
     }
 
     /// Load one byte from the 64-bit time value.
     #[allow(clippy::cast_possible_wrap)]
     pub fn load(&mut self, address: u64) -> u8 {
         // Grab the current time in nanoseconds:
-        let now_ns = get_time_ns();
-        // Figure out which byte they want:
+        let now_ns: u64;
+        if address == 0x1000_2000{
+            now_ns = get_time_ns();
+            self.saved_time = now_ns;
+        }
+        else {
+            now_ns = self.saved_time;
+        }
         let byte_index = (address - RTC_BASE) as usize;
         ((now_ns >> (byte_index * 8)) & 0xff) as u8
     }
