@@ -88,7 +88,6 @@ function show(idx) {
 document.addEventListener("fullscreenchange", () => {
   if (document.fullscreenElement){
     isFullScreen = true;
-    terminal.focus()
   }
   else{
     isFullScreen = false;
@@ -111,6 +110,7 @@ document
             console.error(`Error attempting to enable fullscreen: ${err.message}`);
           });
           btn.classList.add("active")
+          terminal.focus()
         }
       }
       else{
