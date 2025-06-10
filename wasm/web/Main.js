@@ -141,8 +141,12 @@ async function startFunc(inputStr){
   dbgChk.disabled = true
   gameBtn.disabled = true
 
-  const elfBuf = await (await fetch(fileSel.value)).arrayBuffer();
+  terms[0].clear()
+  terms[0].write("\x1b[?25h")
+  terms[0].writeln("Loading file system...")
   const fsBuf  = await (await fetch(ROOTFS_PATH)).arrayBuffer();
+  terms[0].writeln("Loading program...")
+  const elfBuf = await (await fetch(fileSel.value)).arrayBuffer();
 
   const riscv = WasmRiscv.new(inputStr);
   riscv.setup_program(new Uint8Array(elfBuf));
