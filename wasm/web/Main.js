@@ -110,8 +110,8 @@ document
             console.error(`Error attempting to enable fullscreen: ${err.message}`);
           });
           btn.classList.add("active")
-          terminal.focus()
         }
+        terminal.focus()
       }
       else{
           document
@@ -139,6 +139,8 @@ init().then(() => {
   runBtn.disabled = false;
   gameBtn.disabled = false;
 });
+const rootFS_PATH = fetch(ROOTFS_PATH);
+const fileSel_PATH = fetch(fileSel.value);
 
 async function startFunc(inputStr){
   if (!wasmReady) return;
@@ -149,9 +151,9 @@ async function startFunc(inputStr){
   terms[0].clear()
   terms[0].write("\x1b[?25h")
   terms[0].writeln("Loading file system...")
-  const fsBuf  = await (await fetch(ROOTFS_PATH)).arrayBuffer();
+  const fsBuf  = await (await rootFS_PATH).arrayBuffer();
   terms[0].writeln("Loading program...")
-  const elfBuf = await (await fetch(fileSel.value)).arrayBuffer();
+  const elfBuf = await (await fileSel_PATH).arrayBuffer();
 
   const riscv = WasmRiscv.new(inputStr);
   riscv.setup_program(new Uint8Array(elfBuf));
