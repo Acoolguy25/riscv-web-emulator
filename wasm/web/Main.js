@@ -42,6 +42,7 @@ for (let i = 0; i < SCREENS; i++) {
 
     if (i === 0) {
         term.writeln("This is a RISC-V emulator written in Rust + WASM.");
+        term.writeln("Click “Run Games to boot my shell with games running on all 3 screens.");
         term.writeln("Click “Run Demo” to boot my stand-alone shell.");
         term.writeln("");
     }
@@ -84,6 +85,7 @@ function show(idx) {
 document.addEventListener("fullscreenchange", () => {
   if (document.fullscreenElement){
     isFullScreen = true;
+    terms[idx].focus()
   }
   else{
     isFullScreen = false;
